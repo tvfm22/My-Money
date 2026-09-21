@@ -1,0 +1,104 @@
+# ---------------------------------------------------------------------------
+# data/ — the database, uploads, collected static files and the config file.
+#
+# The *structure* is kept in version control (the .gitkeep files, the README and
+# the .env.example template); the contents are not. `data/**` excludes
+# everything, then the specific paths are re-included. The trailing slash on the
+# directory negations is load-bearing: git will not descend into an excluded
+# directory, so re-including the file inside it only works if the directory
+# itself is re-included first.
+# ---------------------------------------------------------------------------
+data/**
+!data/README.md
+!data/.env.example
+!data/db/
+!data/db/.gitkeep
+!data/media/
+!data/media/.gitkeep
+!data/static/
+!data/static/.gitkeep
+!data/backups/
+!data/backups/.gitkeep
+
+# ---------------------------------------------------------------------------
+# Secrets. A real .env must never be committed — it holds the signing key for
+# session cookies and password-reset tokens.
+# ---------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+backend/.env
+
+# ---------------------------------------------------------------------------
+# Databases, including SQLite's write-ahead log sidecar files.
+# ---------------------------------------------------------------------------
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+*.db
+*.db-wal
+*.db-shm
+
+# ---------------------------------------------------------------------------
+# Python
+# ---------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.venv/
+venv/
+env/
+ENV/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+.coverage.*
+build/
+dist/
+!frontend/dist/
+
+# ---------------------------------------------------------------------------
+# Node / frontend
+# ---------------------------------------------------------------------------
+node_modules/
+frontend/dist/
+frontend/.vite/
+.vite/
+*.tsbuildinfo
+npm-debug.log*
+yarn-error.log*
+
+# ---------------------------------------------------------------------------
+# Editors and operating systems
+# ---------------------------------------------------------------------------
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---------------------------------------------------------------------------
+# Scratch files written while working in this repo
+# ---------------------------------------------------------------------------
+.tmp*
+
+# ---------------------------------------------------------------------------
+# Assistant tooling state.
+#
+# `.workbuddy-ai/` holds this project's working notes for the AI assistant —
+# session logs, decisions, a curated conventions file. Useful locally, but it is
+# tooling state rather than project source, and it is not something a clone of
+# this repository needs. The folder is kept on disk; only its contents are
+# excluded here.
+# ---------------------------------------------------------------------------
+.workbuddy-ai/
+
+# Debug scratch: probe scripts and their captured output, which routinely
+# contain live tokens and full API responses.
+.probe*
+run_probe_tests.py

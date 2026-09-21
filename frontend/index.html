@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#f7f8fa" />
+    <meta
+      name="description"
+      content="مدیریت مالی شخصی — ثبت درآمد و هزینه، بودجه‌بندی ماهانه، بدهی‌ها و دارایی‌ها"
+    />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>مالی من — مدیریت مالی شخصی</title>
+    <script>
+      // Apply the saved theme before first paint so a dark-mode user never
+      // sees a white flash. The ThemeProvider takes over after hydration.
+      try {
+        var stored = localStorage.getItem('mymoney.theme')
+        var dark = stored === 'dark' || (!stored && matchMedia('(prefers-color-scheme: dark)').matches)
+        if (dark) {
+          document.documentElement.classList.add('dark')
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0f1115')
+        }
+      } catch (e) {}
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

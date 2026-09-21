@@ -1,0 +1,161 @@
+# ---------------------------------------------------------------------------
+# My-Money — production-shaped stack.
+#
+#   web  (nginx)  serves the built SPA on the published port and proxies
+#                 /api and /admin to the API container, plus /static and
+#                 /media from the shared data folder.
+#   api  (gunicorn) runs Django. Not published; only reachable through web.
+#
+# Both mount the same `data/` folder. That folder is the *only* stateful thing
+# in the stack, so `docker compose down` (even with `-v`) cannot destroy user
+# data — there is no named volume to remove, only a bind mount to a directory
+# that lives in the repository. Rebuilding or replacing either image is
+# likewise non-destructive.
+#
+# Nothing here resets, flushes or reseeds the database. Migrations run on start
+# and are additive. The demo seed is a separate, opt-in service.
+# ---------------------------------------------------------------------------
+
+name: my-money
+
+services:
+  api:
+    build:
+      context: ./backend
+    image: my-money-api:local
+    restart: unless-stopped
+
+    # PID 1 is the entrypoint script. `init` puts a tiny init process in front
+    # of it so signals are forwarded and orphaned children are reaped, which
+    # matters because gunicorn forks workers.
+    init: true
+
+    # Loaded from the same file the application reads, so there is one place to
+    # edit. `required: false` keeps `docker compose config` working on a fresh
+    # clone before the operator has created the file — Django loads it itself
+    # from inside the container, and the entrypoint refuses to start without a
+    # secret key when DEBUG is off.
+    env_file:
+      - path: ./data/.env
+        required: false
+
+    environment:
+      # `environment` beats `env_file`, and that is deliberate: the container
+      # must never serve a debug page or expose a traceback, whatever
+      # DJANGO_DEBUG happens to say for local development.
+      DJANGO_DEBUG: "False"
+
+      # Absolute, because inside the container the data folder is at /data.
+      MY_MONEY_DATA_DIR: /data
+      PORT: "8000"
+
+    volumes:
+      # The one stateful mount. Read-write: Django owns the database, writes
+      # uploaded media, and collects static files here.
+      - ./data:/data
+
+    expose:
+      - "8000"
+
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - |
+          import urllib.request as u
+          u.urlopen("http://127.0.0.1:8000/api/health/", timeout=4)
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      # Migrations and collectstatic run before gunicorn binds, so allow a
+      # little time before a failed probe counts against the container.
+      start_period: 30s
+
+  web:
+    build:
+      context: ./frontend
+    image: my-money-web:local
+    restart: unless-stopped
+    init: true
+
+    depends_on:
+      api:
+        # Wait for a real health response, not just a started process. nginx
+        # resolves the API's address at request time, but starting it against a
+        # container that is still migrating produces a burst of 502s for
+        # whoever loads the page first.
+        condition: service_healthy
+
+    ports:
+      # 8080 by default so the stack can be brought up for a look without
+      # colliding with anything already on port 80. For a real deployment set
+      # WEB_PORT=80 in the environment, or put a TLS-terminating proxy in front
+      # and leave this on 8080.
+      - "${WEB_PORT:-8080}:80"
+
+    volumes:
+      # Read-only: nginx only ever reads collected static files and uploads.
+      # Django is the sole writer, and a read-only mount here means a
+      # misconfigured path in nginx cannot corrupt anything.
+      - ./data:/data:ro
+
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # -------------------------------------------------------------------------
+  # One-shot helper: load demo data into an empty database.
+  #
+  # Behind a profile, so `docker compose up` never runs it. This is the only
+  # thing in the file that writes sample data, and it must be asked for
+  # explicitly:
+  #
+  #   docker compose run --rm seed
+  #
+  # It runs with migrations off (the api service has already applied them) and
+  # creates a demo account plus a few months of transactions. Running it twice
+  # on a live database is a mistake — it adds a second demo user.
+  # -------------------------------------------------------------------------
+  seed:
+    profiles: ["seed"]
+    build:
+      context: ./backend
+    image: my-money-api:local
+    init: true
+    restart: "no"
+    env_file:
+      - path: ./data/.env
+        required: false
+    environment:
+      DJANGO_DEBUG: "False"
+      MY_MONEY_DATA_DIR: /data
+      SEED_DEMO: "true"
+      RUN_MIGRATIONS: "false"
+      RUN_COLLECTSTATIC: "false"
+    volumes:
+      - ./data:/data
+
+  # -------------------------------------------------------------------------
+  # One-shot helper: run the backend test suite inside the image.
+  #
+  #   docker compose run --rm test
+  #
+  # Tests build their own throwaway database, so this never touches data/.
+  # -------------------------------------------------------------------------
+  test:
+    profiles: ["test"]
+    build:
+      context: ./backend
+    image: my-money-api:local
+    init: true
+    restart: "no"
+    environment:
+      DJANGO_DEBUG: "True"
+      MY_MONEY_DATA_DIR: /tmp/test-data
+      RUN_MIGRATIONS: "false"
+      RUN_COLLECTSTATIC: "false"
+    command: ["python", "manage.py", "test"]

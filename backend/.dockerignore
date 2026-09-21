@@ -1,0 +1,53 @@
+# Build context exclusions for the backend image.
+#
+# The point is twofold: keep the context small (a build sends every included
+# file to the daemon), and make it structurally impossible for a secret or a
+# database to end up baked into an image layer. Once a file is in a layer it is
+# in the image, even if a later layer deletes it.
+
+# --- Secrets and data ------------------------------------------------------
+# Belt and braces: the build context is `backend/`, so `data/` is not in it at
+# all, but these rules protect against someone building with the repository root
+# as the context by mistake.
+.env
+.env.*
+!.env.example
+../data/
+data/
+
+# --- Databases -------------------------------------------------------------
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+*.db
+*.db-wal
+*.db-shm
+
+# --- Python -----------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+.coverage.*
+
+# --- Generated and collected output ----------------------------------------
+staticfiles/
+media/
+
+# --- Editors and OS ---------------------------------------------------------
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# --- Scratch ----------------------------------------------------------------
+.tmp*
+*.log

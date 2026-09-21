@@ -1,0 +1,11 @@
+Django==6.1.1
+djangorestframework==3.18.1
+djangorestframework-simplejwt==5.5.1
+django-cors-headers==4.9.0
+django-filter==26.1
+python-dotenv==1.2.3
+
+# Production WSGI server. Not needed for `manage.py runserver`, which is why it
+# is listed separately from the framework packages above — it is the only
+# dependency here that exists purely for deployment.
+gunicorn==23.0.0

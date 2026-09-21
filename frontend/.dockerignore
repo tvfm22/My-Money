@@ -1,0 +1,38 @@
+# Build context exclusions for the web image.
+#
+# `node_modules` is the important one. It is large, it is platform-specific
+# (a Windows or macOS tree copied into a Linux build produces confusing native
+# module failures), and `npm ci` reinstalls it correctly inside the build
+# anyway. Excluding it also keeps the build context from being tens of
+# thousands of files, which is the difference between a fast build and a slow
+# one.
+
+# --- Dependencies and build output -----------------------------------------
+node_modules/
+dist/
+.vite/
+*.tsbuildinfo
+
+# --- Secrets and data ------------------------------------------------------
+.env
+.env.*
+!.env.example
+../data/
+data/
+
+# --- Test and lint artefacts -----------------------------------------------
+coverage/
+htmlcov/
+.pytest_cache/
+
+# --- Editors and OS ---------------------------------------------------------
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# --- Scratch ----------------------------------------------------------------
+.tmp*
+*.log
+npm-debug.log*

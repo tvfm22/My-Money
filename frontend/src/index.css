@@ -1,0 +1,404 @@
+/* ==========================================================================
+   Vazirmatn — the Persian UI font.
+
+   Self-hosted from `public/fonts/` rather than a CDN: the app must render
+   correctly with no internet at all, and a third-party host is one more
+   thing that can fail, track, or vanish. Only the four weights the UI
+   actually uses ship (400/500/600/700) at ~50 kB each.
+
+   `font-display: swap` so text is readable immediately and the webfont
+   swaps in when ready.
+   ========================================================================== */
+
+@font-face {
+  font-family: Vazirmatn;
+  src: url('/fonts/Vazirmatn-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: Vazirmatn;
+  src: url('/fonts/Vazirmatn-Medium.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: Vazirmatn;
+  src: url('/fonts/Vazirmatn-SemiBold.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: Vazirmatn;
+  src: url('/fonts/Vazirmatn-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@import 'tailwindcss';
+
+/* Class-based dark mode: the `dark:` variant responds to `.dark` on <html>,
+   which the ThemeProvider toggles. A media-query variant would take the
+   choice away from the user. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ==========================================================================
+   Design tokens.
+
+   The product spec asks for a minimal, bright, professional finance UI:
+   white surfaces, soft borders, subtle shadows, generous spacing, and
+   semantic colour where green = healthy, amber = approaching a limit,
+   red = exceeded, blue/violet = informational.
+
+   Tokens are declared once here and consumed as Tailwind utilities, so a
+   colour decision is made in exactly one place.
+   ========================================================================== */
+
+@theme {
+  --font-sans: 'Vazirmatn', ui-sans-serif, system-ui, sans-serif;
+
+  /* Surfaces — intentionally light. The app is a daytime-money app. */
+  --color-canvas: #f7f8fa;
+  --color-surface: #ffffff;
+  --color-surface-muted: #f4f5f7;
+  --color-border: #e8eaee;
+  --color-border-strong: #d9dce3;
+
+  /* Text */
+  --color-ink: #14161a;
+  --color-ink-soft: #5b6270;
+  /* Kept at/above 4.5:1 on white — this tone is used for 11–13px captions,
+     where WCAG AA has no large-text exemption. */
+  --color-ink-faint: #667085;
+
+  /* Brand — a calm blue that reads as "fintech" without shouting. */
+  --color-brand-50: #eef4ff;
+  --color-brand-100: #dbe7ff;
+  --color-brand-200: #bcd2ff;
+  --color-brand-300: #8eb2ff;
+  --color-brand-400: #5b8bfb;
+  --color-brand-500: #3566e8;
+  --color-brand-600: #2450cc;
+  --color-brand-700: #1d3fa3;
+
+  /* Semantic finance colours.
+     Each has a soft background for pill/progress fills and a strong text tone
+     that meets contrast on white. */
+  --color-positive-50: #ecfdf3;
+  --color-positive-100: #d3f8e0;
+  --color-positive-500: #12a150;
+  --color-positive-600: #0d7f40;
+  --color-positive-700: #0a6331;
+
+  --color-caution-50: #fff8eb;
+  --color-caution-100: #ffeecd;
+  --color-caution-500: #e08c00;
+  --color-caution-600: #b56f00;
+  --color-caution-700: #8a5400;
+
+  --color-critical-50: #fef2f2;
+  --color-critical-100: #fde0e0;
+  --color-critical-500: #dc2b2b;
+  --color-critical-600: #b91f1f;
+  --color-critical-700: #911616;
+
+  --color-info-50: #f2f4ff;
+  --color-info-100: #e3e7ff;
+  --color-info-500: #5b5bd6;
+  --color-info-600: #4a48b8;
+
+  /* Radii — generous and consistent; nothing is perfectly square. */
+  --radius-card: 1rem;
+  --radius-control: 0.75rem;
+  --radius-pill: 999px;
+
+  /* The dialog backdrop veil. */
+  --color-scrim: rgba(16, 18, 24, 0.4);
+
+  /* The shimmer highlight of the loading skeleton. */
+  --skeleton-highlight: rgba(255, 255, 255, 0.6);
+
+  /* Shadows — soft and low-contrast. No heavy drop shadows. */
+  --shadow-card: 0 1px 2px rgba(16, 24, 40, 0.04), 0 1px 3px rgba(16, 24, 40, 0.06);
+  --shadow-raised: 0 4px 12px rgba(16, 24, 40, 0.06), 0 2px 4px rgba(16, 24, 40, 0.04);
+  --shadow-overlay: 0 12px 32px rgba(16, 24, 40, 0.12);
+}
+
+/* ==========================================================================
+   Base
+   ========================================================================== */
+
+@layer base {
+  :root {
+    /* The whole document is RTL. Setting it here rather than per-component
+       means `ps-*` / `pe-*` / `ms-*` / `me-*` all resolve correctly and the
+       browser's own text alignment follows. */
+    direction: rtl;
+    color-scheme: light;
+  }
+
+  /* ------------------------------------------------------------------
+     Dark theme. The @theme variables above resolve at :root; redefining
+     them under `.dark` (toggled on <html> by the ThemeProvider) swaps
+     every utility that references them in one move.
+
+     The -50/-100 soft tints become dark tinted surfaces and the -600/-700
+     text tones become light tints — the inversion every shade must make.
+     Contrast targets are the same as light mode: 4.5:1 for the caption
+     tones on their surfaces.
+     ------------------------------------------------------------------ */
+  .dark {
+    color-scheme: dark;
+
+    --color-canvas: #0f1115;
+    --color-surface: #171a21;
+    --color-surface-muted: #1f232c;
+    --color-border: #2a2f3a;
+    --color-border-strong: #3a404d;
+
+    --color-ink: #e7eaf0;
+    --color-ink-soft: #a6adbb;
+    --color-ink-faint: #818a9b;
+
+    --color-brand-50: #1d2a45;
+    --color-brand-100: #26375c;
+    --color-brand-200: #3a4f80;
+    --color-brand-300: #7d9ce0;
+    --color-brand-400: #5b8bfb;
+    --color-brand-500: #5b8bfb;
+    --color-brand-600: #3566e8;
+    --color-brand-700: #a5c0ff;
+
+    --color-positive-50: #122b1e;
+    --color-positive-100: #1b4130;
+    --color-positive-500: #22b45f;
+    --color-positive-600: #4bd08b;
+    --color-positive-700: #7ee2ae;
+
+    --color-caution-50: #2e2310;
+    --color-caution-100: #453314;
+    --color-caution-500: #f0a429;
+    --color-caution-600: #f5b942;
+    --color-caution-700: #fadf9f;
+
+    --color-critical-50: #331619;
+    --color-critical-100: #4d2225;
+    --color-critical-500: #dc2b2b;
+    --color-critical-600: #f2878a;
+    --color-critical-700: #f7bcbe;
+
+    --color-info-50: #1e1e3f;
+    --color-info-100: #2b2b5c;
+    --color-info-500: #8587f0;
+    --color-info-600: #a5a6f7;
+
+    --color-scrim: rgba(0, 0, 0, 0.55);
+    --skeleton-highlight: rgba(255, 255, 255, 0.08);
+  }
+
+  html {
+    /* Persian numerals render more cleanly with slightly looser tracking. */
+    letter-spacing: 0;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    margin: 0;
+    background-color: var(--color-canvas);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-feature-settings: 'ss01';
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+
+    /* Respect the notch and the home indicator on phones. */
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  /* Persian text must never be broken mid-word by the browser. */
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6,
+  p,
+  span,
+  div,
+  button,
+  label,
+  a,
+  li,
+  td,
+  th {
+    overflow-wrap: break-word;
+  }
+
+  /* Numbers, timestamps and money read left-to-right even inside RTL text.
+     Without this, a value like ۱۲۳,۴۵۶ can visually reorder against adjacent
+     Persian words. */
+  .ltr-nums {
+    direction: ltr;
+    unicode-bidi: isolate;
+    display: inline-block;
+  }
+
+  /* Visible focus for keyboard users, suppressed for pointer users. */
+  :focus-visible {
+    outline: 2px solid var(--color-brand-500);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  :focus:not(:focus-visible) {
+    outline: none;
+  }
+
+  /* A slim, unobtrusive scrollbar that matches the light theme. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-border-strong) transparent;
+  }
+
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background-color: var(--color-border-strong);
+    border-radius: 999px;
+  }
+
+  /* Remove the number input spinners — they are unusable in RTL and the
+     amount field has its own formatting. */
+  input[type='number']::-webkit-outer-spin-button,
+  input[type='number']::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+
+  input[type='number'] {
+    -moz-appearance: textfield;
+  }
+
+  /* Placeholders in Persian should not look like entered values. */
+  ::placeholder {
+    color: var(--color-ink-faint);
+    opacity: 1;
+  }
+}
+
+/* ==========================================================================
+   Utilities
+   ========================================================================== */
+
+@layer utilities {
+  /* Horizontal scroll containers (category chips, filter rows) should not show
+     a scrollbar on touch devices. */
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Account for the fixed bottom navigation plus the home indicator. */
+  .pb-bottom-nav {
+    padding-bottom: calc(4.5rem + env(safe-area-inset-bottom));
+  }
+
+  /* Entry animation used sparingly — cards and sheets only. */
+  @keyframes fade-rise {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .animate-fade-rise {
+    animation: fade-rise 0.18s ease-out both;
+  }
+
+  @keyframes slide-up {
+    from {
+      transform: translateY(100%);
+    }
+    to {
+      transform: translateY(0);
+    }
+  }
+
+  .animate-slide-up {
+    animation: slide-up 0.22s cubic-bezier(0.32, 0.72, 0, 1) both;
+  }
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  .animate-fade-in {
+    animation: fade-in 0.15s ease-out both;
+  }
+
+  /* A skeleton shimmer for loading states. Deliberately subtle. */
+  @keyframes shimmer {
+    100% {
+      transform: translateX(-100%);
+    }
+  }
+
+  .skeleton {
+    position: relative;
+    overflow: hidden;
+    background-color: var(--color-surface-muted);
+  }
+
+  .skeleton::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    transform: translateX(100%);
+    background-image: linear-gradient(
+      90deg,
+      transparent,
+      var(--skeleton-highlight),
+      transparent
+    );
+    animation: shimmer 1.4s infinite;
+  }
+
+  /* Respect users who have asked for less motion. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
