@@ -346,6 +346,32 @@ class SmsCommitRequestSerializer(serializers.Serializer):
     )
 
 
+class SmsAutoImportToggleSerializer(serializers.Serializer):
+    """Payload for turning automatic reading on or off.
+
+    A single explicit boolean. The field is required rather than defaulted,
+    because "turn it on" and "say nothing" must not be the same request — a
+    defaulted value would let a client flip the switch by omission.
+    """
+
+    enabled = serializers.BooleanField()
+
+
+class SmsSyncRequestSerializer(SmsParseRequestSerializer):
+    """Payload for the check: the same shape as reading, minus the requirement.
+
+    Reading requires text (there is nothing to read otherwise). The check does
+    not: with no text it reports the backlog, which is what the automatic pass
+    on opening the screen sends.
+    """
+
+    def validate(self, attrs):
+        year, month = attrs.get("period_year"), attrs.get("period_month")
+        if (year is None) != (month is None):
+            raise serializers.ValidationError({"period_month": "سال و ماه را با هم بفرستید."})
+        return attrs
+
+
 class SmsReminderDismissSerializer(serializers.Serializer):
     period_year = serializers.IntegerField(min_value=1300, max_value=1600)
     period_month = serializers.IntegerField(min_value=1, max_value=12)

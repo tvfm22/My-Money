@@ -73,6 +73,13 @@ class TransactionSerializer(serializers.ModelSerializer):
     jalali_date = serializers.SerializerMethodField()
     title = serializers.CharField(source="display_title", read_only=True)
 
+    # Where the row came from. Derived from the link a bank message leaves
+    # behind (`SmsImportItem.transaction`), never from a column on this model:
+    # a stored `source` would be a second copy of a fact the link already
+    # records, and the two could disagree after a delete or an edit.
+    source = serializers.SerializerMethodField()
+    source_label = serializers.SerializerMethodField()
+
     class Meta:
         model = Transaction
         fields = (
@@ -96,11 +103,25 @@ class TransactionSerializer(serializers.ModelSerializer):
             "description",
             "title",
             "note",
+            "source",
+            "source_label",
             "tags",
             "created_at",
             "updated_at",
         )
         read_only_fields = ("id", "created_at", "updated_at")
+
+    def get_source(self, obj) -> str:
+        """``sms`` for a row a bank message produced, ``manual`` otherwise.
+
+        `getattr` with a default rather than a try/except: Django's reverse
+        one-to-one descriptor raises an exception that subclasses
+        ``AttributeError`` precisely so this works.
+        """
+        return "sms" if getattr(obj, "sms_item", None) is not None else "manual"
+
+    def get_source_label(self, obj) -> str:
+        return "از پیامک" if self.get_source(obj) == "sms" else "دستی"
 
     def get_amount(self, obj) -> str:
         # Serialized as a string so JavaScript never receives a float for money.

@@ -30,6 +30,7 @@ import type {
   NetWorthPoint,
   Paginated,
   ReportsPayload,
+  SmsAutoImportState,
   SmsBulkPayload,
   SmsBulkUpdateResponse,
   SmsCommitResponse,
@@ -41,6 +42,8 @@ import type {
   SmsParsePreview,
   SmsReconciliation,
   SmsReminderState,
+  SmsSyncPayload,
+  SmsSyncResult,
   Tag,
   Transaction,
   TransactionFilters,
@@ -636,6 +639,37 @@ export const smsApi = {
       period_year: year,
       period_month: month,
     })
+    return data
+  },
+
+  /**
+   * The switch and the state around it.
+   *
+   * One call, because the toggle is rendered from the response: the server's
+   * answer is what the switch shows, so it can never display a value the
+   * server did not accept.
+   */
+  async autoImport(): Promise<SmsAutoImportState> {
+    const { data } = await http.get<SmsAutoImportState>('/sms/auto-import/')
+    return data
+  },
+
+  async setAutoImport(enabled: boolean): Promise<SmsAutoImportState> {
+    const { data } = await http.patch<SmsAutoImportState>('/sms/auto-import/', { enabled })
+    return data
+  },
+
+  /**
+   * Look for messages that have not been staged yet.
+   *
+   * `text` is optional: without it the call records that a check happened and
+   * reports the backlog, which is what the automatic pass sends.
+   */
+  async sync(payload: SmsSyncPayload = {}): Promise<SmsSyncResult> {
+    const { data } = await http.post<SmsSyncResult>(
+      '/sms/auto-import/sync/',
+      cleanParams(payload as Record<string, unknown>),
+    )
     return data
   },
 }

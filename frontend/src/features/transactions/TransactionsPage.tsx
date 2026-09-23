@@ -14,6 +14,7 @@ import { TransactionItem } from '../../components/common/TransactionItem'
 import { MoneyDisplay } from '../../components/common/MoneyDisplay'
 import { QuickExpenseSheet } from './QuickExpenseSheet'
 import { TransactionForm } from './TransactionForm'
+import { SmsAutoImportCard } from '../sms/SmsAutoImportCard'
 import { useDebouncedValue } from '../../hooks/useDebouncedValue'
 import {
   useAccounts,
@@ -206,6 +207,11 @@ export function TransactionsPage() {
           ثبت تراکنش
         </Button>
       </div>
+
+      {/* Bank messages sit above the ledger: the transactions they produce land
+          in the list below, and reading them is something done *while looking
+          at* the ledger rather than on a screen of its own. */}
+      <SmsAutoImportCard />
 
       {/* Search + filter toggle */}
       <div className="mb-3 flex gap-2">

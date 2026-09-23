@@ -15,6 +15,9 @@ Endpoints
     POST   /api/sms/items/bulk/                  classify a selection
     GET    /api/sms/reminder/                    the monthly prompt's state
     POST   /api/sms/reminder/                    dismiss it for a month
+    GET    /api/sms/auto-import/                 the switch, and when it last ran
+    PATCH  /api/sms/auto-import/                 turn automatic reading on/off
+    POST   /api/sms/auto-import/sync/            check for messages not yet staged
 
 Why the parse endpoint saves nothing
 ------------------------------------
@@ -37,6 +40,7 @@ from apps.transactions.serializers import TransactionSerializer
 
 from .models import SmsImportBatch, SmsImportItem
 from .serializers import (
+    SmsAutoImportToggleSerializer,
     SmsBulkUpdateRequestSerializer,
     SmsCommitRequestSerializer,
     SmsImportBatchSerializer,
@@ -44,9 +48,11 @@ from .serializers import (
     SmsImportItemSerializer,
     SmsParseRequestSerializer,
     SmsReminderDismissSerializer,
+    SmsSyncRequestSerializer,
 )
 
 from .services import (
+    auto_import_state,
     bulk_update_items,
     commit_batch,
     create_batch,
@@ -54,6 +60,8 @@ from .services import (
     parse_messages,
     previous_period,
     reminder_state,
+    set_auto_import,
+    sync_messages,
 )
 from .services import apply_balance_reconciliation, balance_reconciliation
 
@@ -283,6 +291,67 @@ class SmsReminderView(APIView):
             serializer.validated_data["period_month"],
         )
         return Response(reminder_state(request.user))
+
+
+class SmsAutoImportView(APIView):
+    """The automatic-reading switch, and the state around it.
+
+    Read and write are one endpoint because the client only ever wants the
+    resulting state: the toggle is rendered from the response, so it can never
+    show a value the server did not accept.
+    """
+
+    permission_classes = [IsOwner]
+
+    def get(self, request):
+        return Response(auto_import_state(request.user))
+
+    def patch(self, request):
+        serializer = SmsAutoImportToggleSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        set_auto_import(request.user, enabled=serializer.validated_data["enabled"])
+        return Response(auto_import_state(request.user))
+
+
+class SmsSyncView(APIView):
+    """Look for messages that have not been staged yet.
+
+    This is the fallback behind the automatic pass: whether the app looks on its
+    own or the user presses «خواندن پیامک‌های قبلی», the same call runs, so the
+    two paths cannot disagree about what counts as new.
+
+    Text is optional. Without it the call records that a check happened and
+    reports the backlog — which is exactly what opening the screen should do
+    when nothing new has been pasted.
+    """
+
+    permission_classes = [IsOwner]
+
+    def post(self, request):
+        serializer = SmsSyncRequestSerializer(
+            data=request.data, context={"request": request}
+        )
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        messages = data.get("messages")
+        pairs = (
+            [(item.get("sender", ""), item["body"]) for item in messages]
+            if messages
+            else None
+        )
+
+        return Response(
+            sync_messages(
+                request.user,
+                raw_text=data.get("text", ""),
+                messages=pairs,
+                period_year=data.get("period_year"),
+                period_month=data.get("period_month"),
+                source_label=data.get("source_label", ""),
+                account=data.get("account"),
+            )
+        )
 
 
 

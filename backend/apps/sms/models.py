@@ -299,6 +299,44 @@ class SmsImportItem(models.Model):
         return format_money(self.balance_after)
 
 
+class SmsAutoImport(models.Model):
+    """The user's switch for automatic message reading, and when it last ran.
+
+    Why the switch is stored rather than kept in the browser
+    --------------------------------------------------------
+    A switch that lives in `localStorage` is a switch per *device*, and it would
+    silently disagree with itself the moment the user opened the app somewhere
+    else. Storing it on the server makes "off" mean off everywhere, and gives
+    the checking routine one authoritative answer to consult.
+
+    The last-check summary is a *snapshot for display* — how many messages the
+    previous run looked at and how many were new. Nothing is derived from it;
+    the counts on screen are recomputed from the ledger every time the state is
+    read, so a stale snapshot can never make a number wrong.
+    """
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="sms_auto_import",
+        verbose_name="کاربر",
+    )
+    is_enabled = models.BooleanField("فعال", default=False)
+
+    last_checked_at = models.DateTimeField("آخرین بررسی", null=True, blank=True)
+    last_check_summary = models.JSONField("خلاصه آخرین بررسی", default=dict, blank=True)
+
+    created_at = models.DateTimeField("زمان ایجاد", auto_now_add=True)
+    updated_at = models.DateTimeField("آخرین بروزرسانی", auto_now=True)
+
+    class Meta:
+        verbose_name = "دریافت خودکار پیامک"
+        verbose_name_plural = "دریافت خودکار پیامک"
+
+    def __str__(self) -> str:
+        return f"{self.user_id} — {'فعال' if self.is_enabled else 'غیرفعال'}"
+
+
 class SmsReminderDismissal(models.Model):
     """Records that the user hid the monthly reminder for one period.
 

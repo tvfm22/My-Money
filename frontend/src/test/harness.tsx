@@ -843,10 +843,75 @@ export const SMS_RECONCILIATION = {
   matches: false,
 }
 
+/**
+ * The automatic-reading switch, off — the state a fresh account is in.
+ *
+ * Copied from a real `GET /api/sms/auto-import/` response rather than written
+ * to match the type: a hand-written fixture is how a payload mismatch survives.
+ */
+export const SMS_AUTO_IMPORT = {
+  enabled: false,
+  last_checked_at: null,
+  last_checked_label: null,
+  last_check: {},
+  imported_from_sms_count: 0,
+  pending_count: 0,
+  message: 'دریافت خودکار خاموش است؛ پیامک‌ها به‌صورت خودکار بررسی نمی‌شوند.',
+}
+
+/** The same switch after a check has run and messages are waiting to review. */
+export const SMS_AUTO_IMPORT_ON = {
+  enabled: true,
+  last_checked_at: '2026-09-23T12:02:00Z',
+  last_checked_label: 'چهارشنبه 1 مهر 1405 — 15:32',
+  last_check: {
+    checked: 12,
+    new_transactions: 3,
+    new_messages: 3,
+    not_transaction: 0,
+    duplicate: 0,
+    without_new: 9,
+  },
+  imported_from_sms_count: 12,
+  pending_count: 3,
+  message: '3 تراکنش از پیامک در انتظار بررسی است.',
+}
+
+/** What `POST /api/sms/auto-import/sync/` answers with when it finds something. */
+export const SMS_SYNC_RESULT = {
+  batch_id: 42,
+  period: { year: 1405, month: 5, label: 'مرداد 1405' },
+  summary: {
+    checked: 12,
+    new_transactions: 3,
+    new_messages: 3,
+    not_transaction: 0,
+    duplicate: 0,
+    without_new: 9,
+  },
+  pending_count: 3,
+  message: '12 پیامک بررسی شد. 3 تراکنش جدید پیدا شد. 9 پیامک تراکنش جدیدی نداشت.',
+}
+
+/** The same call when the text held nothing that was not already known. */
+export const SMS_SYNC_RESULT_EMPTY = {
+  batch_id: null,
+  period: { year: 1405, month: 5, label: 'مرداد 1405' },
+  summary: {
+    checked: 4,
+    new_transactions: 0,
+    new_messages: 0,
+    not_transaction: 0,
+    duplicate: 4,
+    without_new: 4,
+  },
+  pending_count: 0,
+  message: '4 پیامک بررسی شد. تراکنش جدیدی پیدا نشد. 4 پیامک تراکنش جدیدی نداشت.',
+}
+
 // ---------------------------------------------------------------------------
 // Server stub
 // ---------------------------------------------------------------------------
-
 /** The subset of an axios response body our stub produces. */
 interface AxiosLikeResponse {
   data: unknown
@@ -893,6 +958,10 @@ export interface ServerStubOptions {
    * delayed deterministically.
    */
   delayMs?: number
+  /** Initial `GET /sms/auto-import/` body. Defaults to the switch being off. */
+  autoImport?: unknown
+  /** `POST /sms/auto-import/sync/` body. Defaults to a run that found three. */
+  syncResult?: unknown
 }
 
 export interface ServerStub {
@@ -930,6 +999,12 @@ export function installServerStub(options: ServerStubOptions = {}): ServerStub {
   const calls: RecordedCall[] = []
   const original = http.defaults.adapter
   adapterErrors.length = 0
+
+  // Mutated by the toggle and the check, so the read that follows sees the
+  // change — see the note where it is used.
+  let autoImportState: Record<string, unknown> = {
+    ...((options.autoImport as Record<string, unknown>) ?? SMS_AUTO_IMPORT),
+  }
 
   const json = (body: unknown, status: number, config: unknown = {}) => ({
     data: body,
@@ -1020,6 +1095,38 @@ export function installServerStub(options: ServerStubOptions = {}): ServerStub {
       if (url.includes(fragment)) {
         return reply(response.body, response.status ?? 200)
       }
+    }
+
+    // The automatic-reading switch is *stateful* across calls, because the
+    // whole point of it is a transition: turning it on has to be visible to the
+    // read that follows, or a test could not tell a real toggle from a
+    // component that redraws itself.
+    if (method === 'GET' && url.includes('/sms/auto-import')) {
+      return reply(autoImportState, 200)
+    }
+    if (method === 'PATCH' && url.includes('/sms/auto-import')) {
+      const enabled = Boolean(body.enabled)
+      autoImportState = {
+        ...autoImportState,
+        enabled,
+        message: enabled
+          ? 'روشن است؛ هنوز بررسی‌ای انجام نشده است.'
+          : 'دریافت خودکار خاموش است؛ پیامک‌ها به‌صورت خودکار بررسی نمی‌شوند.',
+      }
+      return reply(autoImportState, 200)
+    }
+    if (method === 'POST' && url.includes('/sms/auto-import/sync')) {
+      const result = options.syncResult ?? SMS_SYNC_RESULT
+      const summary = (result as { summary?: unknown }).summary ?? {}
+      autoImportState = {
+        ...autoImportState,
+        last_checked_at: '2026-09-23T12:02:00Z',
+        last_checked_label: 'چهارشنبه 1 مهر 1405 — 15:32',
+        last_check: summary,
+        pending_count: (result as { pending_count?: number }).pending_count ?? 0,
+        message: (result as { message?: string }).message ?? '',
+      }
+      return reply(result, 200)
     }
 
     if (method === 'GET') {

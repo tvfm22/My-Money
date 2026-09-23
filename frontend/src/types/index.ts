@@ -167,6 +167,13 @@ export interface Transaction {
   tags: Tag[]
   created_at: string
   updated_at: string
+  /**
+   * Where the row came from. Optional because a payload cached before the
+   * field existed has no value for it, and every read site treats a missing
+   * value as "unknown" rather than crashing.
+   */
+  source?: 'sms' | 'manual'
+  source_label?: string
 }
 
 export interface TransactionSummary {
@@ -1043,4 +1050,61 @@ export interface SmsBulkUpdateResponse {
   updated_count: number
   skipped_count: number
   items: SmsImportItem[]
+}
+
+/**
+ * The three numbers a check reports.
+ *
+ * `without_new` is `checked - new_transactions` and is sent by the server
+ * rather than derived here: the two ways a message can add nothing — already
+ * seen, or not a transaction at all — answer the same question, and deciding
+ * that in one place is what keeps the sentence on screen consistent with the
+ * numbers next to it.
+ */
+export interface SmsCheckSummary {
+  checked: number
+  new_transactions: number
+  new_messages: number
+  not_transaction: number
+  duplicate: number
+  without_new: number
+}
+
+/**
+ * The automatic-reading switch and the state around it.
+ *
+ * `enabled` and the last-check fields describe two different things and are
+ * rendered separately: whether the app looks on its own, and when it last did.
+ */
+export interface SmsAutoImportState {
+  enabled: boolean
+  last_checked_at: string | null
+  last_checked_label: string | null
+  /** A stored snapshot. Empty until a check has run, hence all-optional. */
+  last_check: Partial<SmsCheckSummary>
+  imported_from_sms_count: number
+  pending_count: number
+  message: string
+}
+
+/**
+ * Payload for a check. `text` is optional on purpose: without it the call
+ * records that a check happened and reports the backlog, which is what the
+ * automatic pass sends when nothing new has been pasted.
+ */
+export interface SmsSyncPayload {
+  text?: string
+  source_label?: string
+  period_year?: number
+  period_month?: number
+  account?: number | null
+}
+
+export interface SmsSyncResult {
+  /** `null` when nothing new was found — no empty batch is created. */
+  batch_id: number | null
+  period: { year: number; month: number; label: string }
+  summary: SmsCheckSummary
+  pending_count: number
+  message: string
 }

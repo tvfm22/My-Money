@@ -36,6 +36,7 @@ from django.utils import timezone
 from apps.categories.models import Category, CategoryKind
 from apps.core.jalali import (
     current_jalali_month,
+    format_jalali_datetime,
     format_money,
     jalali_month_bounds,
     month_label,
@@ -48,6 +49,7 @@ from .banks import UNKNOWN_CODE, bank_label
 from .models import (
     BatchStatus,
     ItemStatus,
+    SmsAutoImport,
     SmsImportBatch,
     SmsImportItem,
     SmsReminderDismissal,
@@ -788,6 +790,224 @@ def bulk_update_items(user, items, **fields) -> dict:
         updated += 1
 
     return {"updated_count": updated, "skipped_count": skipped}
+
+
+# --------------------------------------------------------------------------
+# Automatic reading: the switch, its state, and the idempotent check
+# --------------------------------------------------------------------------
+#
+# What "automatic" means without a device to read messages
+# -------------------------------------------------------
+# Reading the phone's inbox is an operating-system capability: it needs a
+# permission the platform grants to an installed app, not to a web page. There
+# is no browser API for it, and inventing a permission prompt for one would be
+# a lie told to the user's face.
+#
+# So the switch here controls what a web app *can* control: whether the app
+# looks for unrecorded messages on its own, or only when the user asks. Turning
+# it off stops every automatic pass; the manual action keeps working, because
+# the user pressing a button is not the thing they turned off.
+#
+# Nothing in this section sends a message anywhere. Messages are parsed where
+# they already are — on the server that stores them — and the raw text never
+# leaves this process.
+
+
+def get_auto_import(user) -> SmsAutoImport:
+    """The user's switch row, created on first read. Never returns ``None``."""
+    row, _ = SmsAutoImport.objects.get_or_create(user=user)
+    return row
+
+
+def sms_sourced_transaction_count(user) -> int:
+    """How many ledger rows came from a bank message.
+
+    Derived, never stored. The link already exists as
+    ``SmsImportItem.transaction``, so a counter column would be a second copy of
+    the same fact — and the copy is the one that goes stale, because deleting a
+    transaction has no way to decrement a number nobody told it about. Counting
+    the link cannot drift.
+    """
+    return SmsImportItem.objects.filter(user=user, transaction__isnull=False).count()
+
+
+def pending_sms_transaction_count(user) -> int:
+    """Staged bank messages that are real transactions but not yet in the ledger."""
+    return SmsImportItem.objects.filter(
+        user=user, status=ItemStatus.PENDING, is_transaction=True
+    ).count()
+
+
+def _auto_import_message(row: SmsAutoImport, pending: int) -> str:
+    """One plain sentence describing where the feature stands."""
+    if not row.is_enabled:
+        return "دریافت خودکار خاموش است؛ پیامک‌ها به‌صورت خودکار بررسی نمی‌شوند."
+    if row.last_checked_at is None:
+        return "روشن است؛ هنوز بررسی‌ای انجام نشده است."
+    if pending:
+        return f"{pending} تراکنش از پیامک در انتظار بررسی است."
+    return "روشن است و پیامک تازه‌ای در انتظار بررسی نیست."
+
+
+def auto_import_state(user) -> dict:
+    """Everything the Transactions screen needs to describe this feature.
+
+    Reads only. Called on every visit to the screen, so it stays a handful of
+    indexed counts and no parsing.
+    """
+    row = get_auto_import(user)
+    pending = pending_sms_transaction_count(user)
+
+    return {
+        "enabled": row.is_enabled,
+        # ISO for anything that needs arithmetic or ordering, and a ready-made
+        # Jalali label for display, so the screen never formats a date itself.
+        "last_checked_at": row.last_checked_at,
+        "last_checked_label": (
+            format_jalali_datetime(
+                timezone.localtime(row.last_checked_at), persian=False
+            )
+            if row.last_checked_at
+            else None
+        ),
+        "last_check": row.last_check_summary or {},
+        "imported_from_sms_count": sms_sourced_transaction_count(user),
+        "pending_count": pending,
+        "message": _auto_import_message(row, pending),
+    }
+
+
+def set_auto_import(user, *, enabled: bool) -> SmsAutoImport:
+    """Turn automatic reading on or off. Idempotent."""
+    row = get_auto_import(user)
+    if row.is_enabled != enabled:
+        row.is_enabled = enabled
+        row.save(update_fields=["is_enabled", "updated_at"])
+    return row
+
+
+def _known_fingerprints(user, fingerprints: set[str]) -> set[str]:
+    """Which of these fingerprints this user has already staged.
+
+    One query against the candidates rather than one query per message, and
+    against the candidates rather than the user's whole history: the set being
+    asked about is the paste in front of the user, which is bounded, while the
+    history is not.
+    """
+    if not fingerprints:
+        return set()
+    return set(
+        SmsImportItem.objects.filter(
+            user=user, fingerprint__in=fingerprints
+        ).values_list("fingerprint", flat=True)
+    )
+
+
+def _sync_message(summary: dict) -> str:
+    """A sentence that reports the three numbers the user came for."""
+    if not summary["checked"]:
+        return "پیامکی برای بررسی داده نشد."
+    parts = [f"{summary['checked']} پیامک بررسی شد."]
+    if summary["new_transactions"]:
+        parts.append(f"{summary['new_transactions']} تراکنش جدید پیدا شد.")
+    else:
+        parts.append("تراکنش جدیدی پیدا نشد.")
+    if summary["without_new"]:
+        parts.append(f"{summary['without_new']} پیامک تراکنش جدیدی نداشت.")
+    return " ".join(parts)
+
+
+@db_transaction.atomic
+def sync_messages(
+    user,
+    *,
+    raw_text: str = "",
+    messages: list[tuple[str, str]] | None = None,
+    period_year: int | None = None,
+    period_month: int | None = None,
+    account=None,
+    source_label: str = "",
+) -> dict:
+    """Read messages and stage only the ones this user has never seen before.
+
+    This is the idempotency boundary for the whole feature. A message whose
+    fingerprint is already staged is reported as *unchanged* and no row is
+    written for it, so:
+
+    * running «خواندن پیامک‌های قبلی» twice over the same text stages nothing
+      the second time;
+    * a message already handled by an earlier import cannot come back as a
+      second transaction;
+    * the same message arriving through two different routes — pasted now,
+      staged last month — produces one row.
+
+    Deliberately *not* deduplicated here: two messages with the same amount and
+    the same date but different text. Those hash differently, and they are
+    usually two real purchases. `_build_item` still attaches the softer
+    "possible duplicate" warning to them, so the user is told without the app
+    deciding for them.
+
+    A fingerprint is never removed from the known set — including for messages
+    the user *skipped*. Re-offering a rejected message on every pass would make
+    "skip" mean "ask again", and the skip decision would never stick.
+
+    With no text the call still records that a check happened and reports the
+    backlog; that is what the automatic pass on opening the screen does.
+    """
+    if period_year is None or period_month is None:
+        period_year, period_month = previous_period()
+
+    parsed_list = parse_messages(raw_text=raw_text, messages=messages)
+
+    known = _known_fingerprints(user, {item.fingerprint for item in parsed_list})
+    fresh = [item for item in parsed_list if item.fingerprint not in known]
+
+    batch: SmsImportBatch | None = None
+    staged: list[SmsImportItem] = []
+    if fresh:
+        batch = SmsImportBatch.objects.create(
+            user=user,
+            period_year=period_year,
+            period_month=period_month,
+            source_label=(source_label or "")[:120],
+            account=account,
+        )
+        seen: set[str] = set()
+        for parsed in fresh:
+            item = _build_item(user, batch, parsed, seen)
+            if item is not None:
+                staged.append(item)
+
+    new_transactions = sum(1 for item in staged if item.is_transaction)
+    summary = {
+        "checked": len(parsed_list),
+        "new_transactions": new_transactions,
+        "new_messages": len(staged),
+        "not_transaction": sum(1 for item in staged if not item.is_transaction),
+        "duplicate": len(parsed_list) - len(fresh),
+        # Everything the user looked at that did not become a new transaction —
+        # already-known messages and brand-new non-transactional ones alike.
+        # Both answer the same question the user asked ("did this find anything
+        # new?"), so they are one number on screen.
+        "without_new": len(parsed_list) - new_transactions,
+    }
+
+    row = get_auto_import(user)
+    row.last_checked_at = timezone.now()
+    row.last_check_summary = summary
+    row.save(update_fields=["last_checked_at", "last_check_summary", "updated_at"])
+
+    return {
+        "batch_id": batch.id if batch else None,
+        "period": {
+            "year": period_year,
+            "month": period_month,
+            "label": month_label(period_year, period_month),
+        },
+        "summary": summary,
+        "pending_count": pending_sms_transaction_count(user),
+        "message": _sync_message(summary),
+    }
 
 
 

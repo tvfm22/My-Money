@@ -96,10 +96,15 @@ class TransactionQuerySet(models.QuerySet):
         return self.filter(occurred_on__gte=start, occurred_on__lte=end)
 
     def with_relations(self):
-        """Everything the list serializer reads, in one query."""
-        return self.select_related("category", "category__parent", "account").prefetch_related(
-            "tags"
-        )
+        """Everything the list serializer reads, in one query.
+
+        `sms_item` is included because the serializer derives `source` from it,
+        and a missing `select_related` here would turn a twenty-row page into
+        twenty extra queries.
+        """
+        return self.select_related(
+            "category", "category__parent", "account", "sms_item"
+        ).prefetch_related("tags")
 
     def recent_first(self):
         return self.order_by("-occurred_on", "-created_at", "-id")

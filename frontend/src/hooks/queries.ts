@@ -47,6 +47,7 @@ import type {
   SmsBulkPayload,
   SmsItemPatch,
   SmsParsePayload,
+  SmsSyncPayload,
   Transaction,
   TransactionFilters,
   TransactionSummary,
@@ -100,6 +101,7 @@ export const queryKeys = {
   smsBatch: (id: number) => ['sms', 'batch', id] as const,
   smsReminder: ['sms', 'reminder'] as const,
   smsReconcile: (id: number) => ['sms', 'reconcile', id] as const,
+  smsAutoImport: ['sms', 'auto-import'] as const,
 }
 
 // ---------------------------------------------------------------------------
@@ -810,6 +812,52 @@ export function useDismissSmsReminder() {
       smsApi.dismissReminder(year, month),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.smsReminder })
+    },
+  })
+}
+
+/** The automatic-reading switch and its state, read by the Transactions screen. */
+export function useSmsAutoImport() {
+  return useQuery({
+    queryKey: queryKeys.smsAutoImport,
+    queryFn: smsApi.autoImport,
+  })
+}
+
+/**
+ * Turning the switch over.
+ *
+ * The response *is* the new state, so it is written straight into the cache
+ * instead of triggering a refetch: the switch then moves in the same frame the
+ * user tapped it, and it can only ever show a value the server confirmed.
+ */
+export function useSetSmsAutoImport() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (enabled: boolean) => smsApi.setAutoImport(enabled),
+    onSuccess: (state) => {
+      queryClient.setQueryData(queryKeys.smsAutoImport, state)
+    },
+  })
+}
+
+/**
+ * Look for messages that have not been staged yet.
+ *
+ * Invalidates the batch list and the monthly reminder as well as its own state:
+ * a check can stage a batch, and the reminder is derived from whether last
+ * month's messages have been dealt with.
+ */
+export function useSmsSync() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (payload: SmsSyncPayload = {}) => smsApi.sync(payload),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.smsAutoImport })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.smsBatches })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.smsReminder })
+      // Nothing financial is invalidated: a check stages messages for review,
+      // and only the review screen writes to the ledger.
     },
   })
 }
