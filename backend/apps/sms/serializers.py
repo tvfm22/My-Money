@@ -263,6 +263,17 @@ class SmsImportBatchSummarySerializer(serializers.ModelSerializer):
     def get_counts(self, obj: SmsImportBatch) -> dict:
         return _counts(obj.items.all())
 
+    def validate_account(self, value):
+        # The update path (PATCH /batches/{id}/) re-points the batch — and the
+        # reconciliation actions write `opening_balance` through that account.
+        # Without this, a batch could be pointed at another user's account.
+        if value is None:
+            return None
+        request = self.context.get("request")
+        if request and value.user_id != request.user.id:
+            raise serializers.ValidationError("حساب انتخابی معتبر نیست.")
+        return value
+
 
 class SmsImportBatchSerializer(SmsImportBatchSummarySerializer):
     """A batch with every item — what the review screen loads."""

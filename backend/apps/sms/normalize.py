@@ -54,6 +54,11 @@ PERSIAN_DECIMAL_SEPARATOR = "\u066b"
 # U+2212 MINUS SIGN, which appears in bank forms instead of ASCII '-'.
 _UNICODE_MINUS = "\u2212"
 
+# Zero-width and directional marks SMS gateways insert mid-word. ZWSP splits a
+# word ("می\u200bشود"); LRM/RLM wrap numbers. All are invisible and carry no
+# meaning for matching, so they are stripped rather than spaced.
+_INVISIBLE_MARKS = ("\u200b", "\u200e", "\u200f", "\ufeff")
+
 _DIGIT_AND_LETTER_MAP = str.maketrans(
     {
         _ARABIC_YEH: _PERSIAN_YEH,
@@ -89,6 +94,8 @@ def normalize_text(raw: str) -> str:
     # parser and the rest of the app can never disagree about what "۱۲۳" means.
     text = to_latin_digits(str(raw))
     text = text.translate(_DIGIT_AND_LETTER_MAP)
+    for mark in _INVISIBLE_MARKS:
+        text = text.replace(mark, "")
     return _WHITESPACE_RE.sub(" ", text).strip()
 
 

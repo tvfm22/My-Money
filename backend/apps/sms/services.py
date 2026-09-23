@@ -44,7 +44,7 @@ from apps.core.jalali import (
 from apps.core.money import quantize_money
 from apps.transactions.models import Transaction
 
-from .banks import UNKNOWN_CODE
+from .banks import UNKNOWN_CODE, bank_label
 from .models import (
     BatchStatus,
     ItemStatus,
@@ -87,6 +87,11 @@ def _looks_like_sender(line: str) -> bool:
     # A line with Persian letters or Persian digits is message text — a bank's
     # Persian sentence pulled out of a phone app often starts on its own line.
     if _PERSIAN_LETTERS_RE.search(line) or _PERSIAN_DIGITS_RE.search(line):
+        return False
+    # A date/datetime stamp ("2026-09-06", "1405/06/15 07:28", "07:28") is part
+    # of the body, not a sender — without this a leading stamp is swallowed as
+    # the sender and the message loses its date.
+    if re.search(r"\d\s*[/.\-]\s*\d", line) or re.search(r"\d\s*:\s*\d{2}", line):
         return False
     return bool(_BARE_SENDER_RE.match(line))
 
@@ -247,6 +252,61 @@ def suggest_category(user, *, haystack: str, direction: str | None):
     return None
 
 
+# Words in a bank label that carry no identity ("بانک قرض‌الحسنه مهر ایران" is
+# about "مهر ایران", not about "بانک"). Used to match an SMS against the user's
+# accounts by their `institution`/`name`.
+_BANK_LABEL_STOPWORDS = frozenset({"بانک", "و", "قرض‌الحسنه", "قرض", "الحسنه"})
+
+
+def _bank_tokens(bank_code: str) -> list[str]:
+    """Identity words of a bank label, for account matching."""
+    label = bank_label(bank_code)
+    parts = re.split(r"[\s()\[\]<>«»]+", label)
+    tokens = [part for part in parts if part and part not in _BANK_LABEL_STOPWORDS]
+    if bank_code == "blubank" and "بلو" not in tokens:
+        tokens.append("بلو")
+    return tokens
+
+
+def suggest_account(user, *, bank_code: str):
+    """The user's account this bank's messages most likely belong to, or None.
+
+    Matches the bank's identity words against the user's accounts
+    (`institution` first, then `name`) and only answers when the match is
+    **unique**: with two "ملت" accounts, guessing one would file money under
+    the wrong card. A suggestion is prefilled on the review screen — the user
+    still confirms it before anything reaches the ledger.
+    """
+    from apps.accounts.models import Account
+
+    if not bank_code or bank_code == UNKNOWN_CODE:
+        return None
+    tokens = _bank_tokens(bank_code)
+    if not tokens:
+        return None
+
+    accounts = list(
+        Account.objects.filter(user=user, is_active=True).order_by("sort_order", "name")
+    )
+    if not accounts:
+        return None
+
+    def hits(field: str) -> list:
+        matched = []
+        for account in accounts:
+            value = getattr(account, field, "") or ""
+            if any(token and token in value for token in tokens):
+                matched.append(account)
+        return matched
+
+    for field in ("institution", "name"):
+        matched = hits(field)
+        unique = list(dict.fromkeys(matched))
+        if len(unique) == 1:
+            return unique[0]
+    return None
+
+
 # --------------------------------------------------------------------------
 # Staging
 # --------------------------------------------------------------------------
@@ -327,6 +387,12 @@ def _build_item(
         if parsed.is_usable
         else None
     )
+    # The batch account wins when the user set one; otherwise prefill the one
+    # account whose institution matches the detected bank — still just a
+    # suggestion the review screen can change before commit.
+    account = batch.account or (
+        suggest_account(user, bank_code=parsed.bank_code) if parsed.is_usable else None
+    )
 
     return SmsImportItem.objects.create(
         batch=batch,
@@ -353,7 +419,7 @@ def _build_item(
         merchant=parsed.merchant,
         warnings=warnings,
         category=category,
-        account=batch.account,
+        account=account,
         spending_type="",
         description=parsed.description,
         status=status,
@@ -519,6 +585,11 @@ def balance_reconciliation(user, batch: SmsImportBatch) -> dict:
         return {
             "available": False,
             "message": "برای تطبیق موجودی، ابتدا حساب این دسته را انتخاب کنید.",
+        }
+    if account.user_id != user.id:
+        return {
+            "available": False,
+            "message": "این حساب به شما تعلق ندارد.",
         }
 
     readings = [item for item in batch.items.all() if item.balance_after is not None]

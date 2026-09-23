@@ -100,7 +100,8 @@ class RequiredVariantTests(TestCase):
         self.assertGreaterEqual(without.confidence, LOW_CONFIDENCE)
         self.assertEqual(without.field_confidence["balance"], Decimal("0.000"))
         self.assertEqual(without.field_confidence["amount"], Decimal("1.000"))
-        self.assertEqual(without.field_confidence["direction"], Decimal("0.850"))
+        # "خرید با کارت" is a phrase-level rule, not the bare "خرید" keyword.
+        self.assertEqual(without.field_confidence["direction"], Decimal("1.000"))
 
     def test_similar_amount_and_balance_are_attached_by_label_proximity(self):
         """Both figures have the same number of digits — and swap nothing."""
@@ -165,6 +166,16 @@ class DirectionTableTests(TestCase):
     def test_accounting_tags(self):
         credited = parse_sms("حساب شما بستانکار شد. مبلغ 2,000,000 ریال. مانده: 4,000,000 ریال")
         debited = parse_sms("حساب شما بدهکار شد. مبلغ 2,000,000 ریال. مانده: 4,000,000 ریال")
+
+        self.assertEqual(credited.direction, "income")
+        self.assertEqual(credited.direction_pattern, "credit_sentence_bestankar_shod")
+        self.assertEqual(debited.direction, "expense")
+        self.assertEqual(debited.direction_pattern, "debit_sentence_bedehkar_shod")
+
+    def test_bare_accounting_tags(self):
+        """A tag with no "حساب ... شد" sentence around it still classifies."""
+        credited = parse_sms("وضعیت: بستانکار. مبلغ 2,000,000 ریال. مانده: 4,000,000 ریال")
+        debited = parse_sms("وضعیت: بدهکار. مبلغ 2,000,000 ریال. مانده: 4,000,000 ریال")
 
         self.assertEqual(credited.direction, "income")
         self.assertEqual(credited.direction_pattern, "credit_bestankar")
@@ -528,6 +539,232 @@ class AmountGuardTests(TestCase):
         self.assertEqual(parsed.merchant, "")
         # The fallback is the generic direction label plus the bank label.
         self.assertEqual(parsed.description, "برداشت بانک مسکن")
+
+
+# --------------------------------------------------------------------------
+# Real bank templates — one per issuer/shape
+# --------------------------------------------------------------------------
+
+
+class RealBankTemplateTests(TestCase):
+    """One message per real-world template the tables now cover."""
+
+    def test_mellat_withdrawal_with_datetime(self):
+        parsed = parse_sms(
+            "برداشت از حساب 1234567890 مبلغ 2,000,000 ریال "
+            "در تاریخ 1404/06/15 ساعت 12:30. مانده: 15,000,000 ریال",
+            sender="MELLAT",
+        )
+
+        self.assertEqual(parsed.bank_code, "mellat")
+        self.assertEqual(parsed.direction, "expense")
+        self.assertEqual(parsed.amount_toman, Decimal("200000.00"))
+        self.assertEqual(parsed.balance_after, Decimal("1500000.00"))
+        self.assertEqual(parsed.date_source, "jalali")
+
+    def test_melli_deposit(self):
+        parsed = parse_sms(
+            "مبلغ 5,000,000 ریال به حساب 603799********1234 واریز شد. "
+            "موجودی: 20,000,000 ریال 1404/06/16",
+            sender="MELLIBANK",
+        )
+
+        self.assertEqual(parsed.bank_code, "melli")
+        self.assertEqual(parsed.direction, "income")
+        self.assertEqual(parsed.amount_toman, Decimal("500000.00"))
+        self.assertEqual(parsed.balance_after, Decimal("2000000.00"))
+
+    def test_saderat_card_balance_label(self):
+        parsed = parse_sms(
+            "برداشت از کارت 603769****1234 مبلغ 1,000,000 ریال. مانده کارت: 3,200,000 ریال"
+        )
+
+        self.assertEqual(parsed.direction, "expense")
+        self.assertEqual(parsed.amount_toman, Decimal("100000.00"))
+        self.assertEqual(parsed.balance_after, Decimal("320000.00"))
+        self.assertEqual(parsed.balance_label, "مانده کارت")
+
+    def test_tejarat_bedehkar_sentence(self):
+        parsed = parse_sms(
+            "حساب شما به مبلغ 750,000 ریال بدهکار شد. مانده حساب: 2,100,000 ریال"
+        )
+
+        self.assertEqual(parsed.direction, "expense")
+        self.assertEqual(parsed.amount_toman, Decimal("75000.00"))
+        self.assertEqual(parsed.balance_after, Decimal("210000.00"))
+
+    def test_refah_bestankar_sentence(self):
+        parsed = parse_sms("حساب 12345 به مبلغ 750,000 ریال بستانکار شد")
+
+        self.assertEqual(parsed.direction, "income")
+        self.assertEqual(parsed.amount_toman, Decimal("75000.00"))
+
+    def test_card_to_card_transfer(self):
+        parsed = parse_sms(
+            "کارت به کارت از کارت 603799****1111 به کارت 610433****2222 "
+            "مبلغ 500,000 ریال 1404/06/15"
+        )
+
+        self.assertEqual(parsed.direction, "expense")
+        self.assertEqual(parsed.direction_pattern, "debit_sentence_kart_be_kart")
+        self.assertEqual(parsed.amount_toman, Decimal("50000.00"))
+
+    def test_pos_purchase_with_terminal(self):
+        parsed = parse_sms(
+            "خرید با کارت ****7284 از پایانه فروشگاه رفاه مبلغ 250,000 ریال. "
+            "مانده: 1,500,000 ریال"
+        )
+
+        self.assertEqual(parsed.direction, "expense")
+        self.assertEqual(parsed.amount_toman, Decimal("25000.00"))
+        self.assertEqual(parsed.balance_after, Decimal("150000.00"))
+
+    def test_english_saman_withdrawal(self):
+        parsed = parse_sms(
+            "Saman Bank Withdrawal - Amount: 1,200,000 Rials - "
+            "Balance: 8,000,000 Rials - Date: 2026-09-06"
+        )
+
+        self.assertEqual(parsed.bank_code, "saman")
+        self.assertEqual(parsed.direction, "expense")
+        self.assertEqual(parsed.amount_toman, Decimal("120000.00"))
+        self.assertEqual(parsed.balance_after, Decimal("800000.00"))
+        self.assertEqual(parsed.date_source, "gregorian")
+
+    def test_english_deposit_with_available_balance(self):
+        parsed = parse_sms(
+            "Deposit of 2,000,000 IRR to your account. "
+            "Available balance: 10,000,000 IRR"
+        )
+
+        self.assertEqual(parsed.direction, "income")
+        self.assertEqual(parsed.amount_toman, Decimal("200000.00"))
+        self.assertEqual(parsed.balance_after, Decimal("1000000.00"))
+
+    def test_karafarin_body_marker(self):
+        parsed = parse_sms("بانک کارآفرین\nبرداشت مبلغ 400,000 ریال. مانده: 2,000,000 ریال")
+
+        self.assertEqual(parsed.bank_code, "karafarin")
+        self.assertEqual(parsed.direction, "expense")
+
+    def test_bank_mellat_english_body_marker(self):
+        parsed = parse_sms("Bank Mellat\nبرداشت مبلغ 400,000 ریال. مانده: 2,000,000 ریال")
+
+        self.assertEqual(parsed.bank_code, "mellat")
+
+
+class MonthNameDateTests(TestCase):
+    def test_jalali_month_name(self):
+        from apps.core.jalali import to_gregorian
+
+        parsed = parse_sms(
+            "از حساب شما مبلغ 500,000 ریال کسر گردید در تاریخ ۱۵ شهریور ۱۴۰۴. "
+            "موجودی: 1,500,000 ریال"
+        )
+
+        self.assertEqual(parsed.direction, "expense")
+        self.assertEqual(parsed.date_source, "jalali_month_name")
+        self.assertEqual(parsed.occurred_on, to_gregorian(1404, 6, 15))
+
+    def test_numeric_date_still_wins_over_month_name(self):
+        parsed = parse_sms("خرید مبلغ 250,000 ریال 1405/06/15 در تاریخ ۱۵ شهریور ۱۴۰۴")
+
+        self.assertEqual(parsed.date_source, "jalali")
+
+
+class GroupedAmountTests(TestCase):
+    def test_space_grouped_thousands(self):
+        parsed = parse_sms("برداشت مبلغ 1 500 000 ریال. مانده: 3 000 000 ریال")
+
+        self.assertEqual(parsed.amount_toman, Decimal("150000.00"))
+        self.assertEqual(parsed.balance_after, Decimal("300000.00"))
+
+    def test_dot_grouped_thousands(self):
+        parsed = parse_sms("برداشت مبلغ 1.500.000 ریال. مانده: 3.000.000 ریال")
+
+        self.assertEqual(parsed.amount_toman, Decimal("150000.00"))
+        self.assertEqual(parsed.balance_after, Decimal("300000.00"))
+
+
+class NoiseShapeTests(TestCase):
+    def test_failed_transaction_is_not_a_transaction(self):
+        parsed = parse_sms("تراکنش ناموفق بود. موجودی کافی نیست. مبلغ 500,000 ریال")
+
+        self.assertFalse(parsed.is_transaction)
+        self.assertEqual(parsed.noise_kind, "failed")
+
+    def test_instalment_reminder_is_a_request(self):
+        parsed = parse_sms("یادآوری: قسط وام شما به مبلغ 800,000 ریال سررسید شد")
+
+        self.assertFalse(parsed.is_transaction)
+        self.assertEqual(parsed.noise_kind, "request")
+
+    def test_real_instalment_debit_is_still_an_expense(self):
+        parsed = parse_sms("پرداخت قسط وام به مبلغ 800,000 ریال از حساب شما کسر شد")
+
+        self.assertTrue(parsed.is_transaction)
+        self.assertEqual(parsed.direction, "expense")
+        self.assertEqual(parsed.amount_toman, Decimal("80000.00"))
+
+    def test_real_purchase_mentioning_discount_is_kept(self):
+        parsed = parse_sms(
+            "۱۰٪ تخفیف خرید از فروشگاه شهروند؛ مبلغ 450,000 ریال از حساب شما کسر شد. "
+            "موجودی: 2,000,000 ریال"
+        )
+
+        self.assertTrue(parsed.is_transaction)
+        self.assertEqual(parsed.direction, "expense")
+        self.assertEqual(parsed.amount_toman, Decimal("45000.00"))
+
+    def test_advertising_discount_is_still_rejected(self):
+        parsed = parse_sms("تخفیف ویژه فروشگاه‌ها تا ۵۰٪؛ در جشنواره بانک شرکت کنید")
+
+        self.assertFalse(parsed.is_transaction)
+        self.assertEqual(parsed.noise_kind, "advertisement")
+
+
+class SplitShapeTests(TestCase):
+    def test_leading_datetime_is_body_not_sender(self):
+        from apps.sms.services import split_messages
+
+        messages = split_messages("1405/06/15 07:28\nبرداشت مبلغ 200,000 ریال")
+
+        self.assertEqual(len(messages), 1)
+        self.assertEqual(messages[0][0], "")
+        self.assertIn("1405/06/15", messages[0][1])
+
+
+class AccountSuggestionTests(TestCase):
+    def test_match_by_institution(self):
+        from django.contrib.auth import get_user_model
+
+        from apps.accounts.models import Account
+        from apps.sms.services import suggest_account
+
+        user = get_user_model().objects.create_user(
+            email="sms-bank@example.com", password="x"
+        )
+        account = Account.objects.create(
+            user=user, name="ملت جاری", institution="بانک ملت"
+        )
+
+        self.assertEqual(suggest_account(user, bank_code="mellat"), account)
+        self.assertIsNone(suggest_account(user, bank_code="unknown"))
+        self.assertIsNone(suggest_account(user, bank_code="saman"))
+
+    def test_ambiguous_match_suggests_nothing(self):
+        from django.contrib.auth import get_user_model
+
+        from apps.accounts.models import Account
+        from apps.sms.services import suggest_account
+
+        user = get_user_model().objects.create_user(
+            email="sms-amb@example.com", password="x"
+        )
+        Account.objects.create(user=user, name="ملت جاری", institution="بانک ملت")
+        Account.objects.create(user=user, name="ملت پس‌انداز", institution="بانک ملت")
+
+        self.assertIsNone(suggest_account(user, bank_code="mellat"))
 
 
 

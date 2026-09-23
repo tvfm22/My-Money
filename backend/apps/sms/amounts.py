@@ -45,15 +45,26 @@ _UNIT_WORDS = {
     "ريال": RIAL,  # Arabic yeh, still possible before normalization
     "IRR": RIAL,
     "RIAL": RIAL,
+    "RIALS": RIAL,
     "تومان": TOMAN,
     "تومن": TOMAN,  # colloquial spelling, used by blu Bank
     "TOMAN": TOMAN,
+    "TOMANS": TOMAN,
+    "IRT": TOMAN,
 }
 
-# A number, optionally grouped with commas, optionally with a decimal part.
-# Grouping is validated (`1,23,456` is not an amount) because a sloppy regex
-# here would happily read a card number as money.
-_NUMBER = r"\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?"
+# A number: grouped thousands (comma, space or dot — banks use all three),
+# optionally with a decimal part. Grouping is validated (`1,23,456` is not an
+# amount) because a sloppy regex here would happily read a card number as
+# money. Space grouping covers "1 500 000" pastes; dot grouping covers
+# "1.500.000" templates (two 3-digit groups can only be grouping, never a
+# decimal fraction).
+_NUMBER = (
+    r"\d{1,3}(?:,\d{3})+(?:\.\d+)?"
+    r"|\d{1,3}(?: \d{3})+(?:\.\d+)?"
+    r"|\d{1,3}(?:\.\d{3})+(?:,\d+)?"
+    r"|\d+(?:\.\d+)?"
+)
 
 # The signed form is not decoration: Bankino's template communicates direction
 # *only* through the sign, so it has to be captured.
@@ -77,6 +88,15 @@ _IDENTIFIER_PREFIX_RE = re.compile(
 
 # How far back the identifier prefix is looked for.
 _IDENTIFIER_LOOKBEHIND = 24
+
+# "کارت" as part of a *balance* label ("مانده کارت: 3,200,000 ریال") is not an
+# identifier prefix: the figure after it is the balance, not a card number.
+# Without this, the identifier guard below would swallow every card-balance
+# figure and the message would parse with a null balance.
+_BALANCE_CARD_PREFIX_RE = re.compile(
+    r"(?:مانده|موجودی|باقی\s*مانده|باقیمانده)"
+    r"(?:\s*(?:حساب|کارت|فعلی|سپرده|قابل\s*برداشت))?\s*کارت[\s:*]*$"
+)
 
 
 # Separators that mean "this digit group is part of a date or a clock time".
@@ -146,10 +166,15 @@ def parse_amount_text(text: str) -> Decimal | None:
 
     Used when a user corrects a figure by hand, so a manual edit goes through
     the same normalization as an automatic read instead of a second code path.
+    Understands every grouping the templates use: commas, spaces and dot
+    groups (``"1.500.000"``); more than one dot can only be grouping, never a
+    decimal fraction.
     """
     cleaned = re.sub(r"[,\s]", "", (text or "").strip())
     if not cleaned:
         return None
+    if cleaned.count(".") > 1:
+        cleaned = cleaned.replace(".", "")
     try:
         return Decimal(cleaned)
     except Exception:  # noqa: BLE001 - malformed input simply means "no amount"
@@ -205,7 +230,10 @@ def find_amounts(text: str) -> list[AmountMatch]:
         if any(start < span_end and span_start < end for span_start, span_end in identifier_spans):
             continue
         # Prefixed by an identifier word ("کارت 7284", "کد رهگیری 45812").
-        if _IDENTIFIER_PREFIX_RE.search(text[max(0, start - _IDENTIFIER_LOOKBEHIND) : start]):
+        prefix_window = text[max(0, start - _IDENTIFIER_LOOKBEHIND) : start]
+        if _IDENTIFIER_PREFIX_RE.search(prefix_window) and not _BALANCE_CARD_PREFIX_RE.search(
+            prefix_window
+        ):
             continue
         if _touches_date_separator(text, start, end):
             continue

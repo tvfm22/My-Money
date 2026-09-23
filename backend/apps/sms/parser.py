@@ -78,6 +78,27 @@ _DATE_COMPILED = (
 )
 _CLOCK_COMPILED = re.compile(CLOCK_PATTERN)
 
+# Jalali month names, as banks print them after "مورخ" / "در تاریخ":
+# "مورخ ۱۵ شهریور ۱۴۰۴", "در تاریخ 1 مهر 1404". Digits are already Latin and
+# the Arabic yeh already folded by the time this runs, so one spelling each.
+_JALALI_MONTHS = {
+    "فروردین": 1,
+    "اردیبهشت": 2,
+    "خرداد": 3,
+    "تیر": 4,
+    "مرداد": 5,
+    "شهریور": 6,
+    "مهر": 7,
+    "آبان": 8,
+    "آذر": 9,
+    "دی": 10,
+    "بهمن": 11,
+    "اسفند": 12,
+}
+_MONTH_NAME_RE = re.compile(
+    r"(?<!\d)(\d{1,2})\s*(" + "|".join(_JALALI_MONTHS) + r")\s*(1[34]\d{2})(?!\d)"
+)
+
 _DIRECTION_LABELS = {"expense": "برداشت", "income": "واریز"}
 
 
@@ -303,7 +324,9 @@ def _extract_date(text: str) -> tuple[dt.date | None, str, bool]:
     """``(date, source, had_date_text)``.
 
     Jalali is tried first because it is what Iranian bank templates print;
-    Gregorian is accepted for the few English ones. A Jalali date is converted
+    Gregorian is accepted for the few English ones; a Jalali month *name*
+    ("۱۵ شهریور ۱۴۰۴") is accepted last, because it is wordier and therefore
+    more likely to be prose than a stamp. A Jalali date is converted
     through `apps.core.jalali.to_gregorian`, the same converter the rest of the
     app uses to store and present dates, so the parser cannot disagree with the
     calendar the UI shows.
@@ -326,6 +349,16 @@ def _extract_date(text: str) -> tuple[dt.date | None, str, bool]:
             # A template can print something date-shaped that is not a date
             # (a reference number, a serial). Move on rather than fail.
             continue
+
+    match = _MONTH_NAME_RE.search(text)
+    if match is not None:
+        try:
+            day = int(match.group(1))
+            month = _JALALI_MONTHS[match.group(2)]
+            year = int(match.group(3))
+            return to_gregorian(year, month, day), "jalali_month_name", True
+        except (ValueError, KeyError):
+            pass
 
     return None, "", False
 
@@ -385,6 +418,7 @@ NO_BANK_WARNING = "بانک فرستنده شناسایی نشد؛ پیش از �
 _NOISE_WARNINGS = {
     "otp": "این پیامک کد یکبار مصرف است و تراکنش نیست.",
     "advertisement": "این پیامک تبلیغاتی است و تراکنش نیست.",
+    "failed": "این پیامک خبر از تراکنش ناموفق می‌دهد؛ پولی جابه‌جا نشده است.",
     "request": "این پیامک درخواست پرداخت است و تراکنش نیست.",
     "empty": "متن پیامک خالی است.",
 }
