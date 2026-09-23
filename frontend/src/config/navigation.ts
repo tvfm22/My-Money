@@ -4,6 +4,7 @@ import {
   HandCoins,
   Home,
   Lightbulb,
+  MessageSquareText,
   PieChart,
   Settings,
   Wallet,
@@ -39,6 +40,13 @@ export const NAV_ITEMS: NavItem[] = [
   { to: '/budgets', label: 'بودجه‌ها', icon: PieChart, inBottomNav: true, section: 'main' },
   { to: '/debts', label: 'بدهی‌ها', icon: HandCoins, inBottomNav: true, section: 'main' },
   { to: '/assets', label: 'دارایی‌ها', icon: Wallet, inBottomNav: true, section: 'main' },
+  {
+    to: '/sms',
+    label: 'پیامک بانکی',
+    icon: MessageSquareText,
+    inBottomNav: false,
+    section: 'main',
+  },
   { to: '/reports', label: 'گزارش‌ها', icon: BarChart3, inBottomNav: false, section: 'analysis' },
   {
     to: '/insights',

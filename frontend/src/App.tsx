@@ -9,6 +9,8 @@ import { BudgetsPage } from './features/budgets/BudgetsPage'
 import { BudgetPerformancePage } from './features/budgets/BudgetPerformancePage'
 import { DebtsPage } from './features/debts/DebtsPage'
 import { DebtDetailPage } from './features/debts/DebtDetailPage'
+import { SmsImportPage } from './features/sms/SmsImportPage'
+import { SmsBatchReviewPage } from './features/sms/SmsBatchReviewPage'
 import { InsightsPage } from './features/insights/InsightsPage'
 import { SettingsPage } from './features/settings/SettingsPage'
 import { useAuth } from './hooks/useAuth'
@@ -90,6 +92,8 @@ export default function App() {
         <Route path="budgets/performance" element={<BudgetPerformancePage />} />
         <Route path="debts" element={<DebtsPage />} />
         <Route path="debts/:id" element={<DebtDetailPage />} />
+        <Route path="sms" element={<SmsImportPage />} />
+        <Route path="sms/batches/:id" element={<SmsBatchReviewPage />} />
         <Route
           path="assets"
           element={

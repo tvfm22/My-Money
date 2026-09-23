@@ -144,6 +144,7 @@ INSTALLED_APPS = [
     "apps.assets",
     "apps.reports",
     "apps.insights",
+    "apps.sms",
 ]
 
 MIDDLEWARE = [

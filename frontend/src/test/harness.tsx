@@ -703,6 +703,147 @@ export const INSIGHTS: InsightsResponse = {
 }
 
 // ---------------------------------------------------------------------------
+// Bank-SMS import
+//
+// Staging fixtures follow the same rules as the budget ones: `*_display`
+// strings carry Persian digits (the server really sends them; the response
+// interceptor transliterates them), and every field the serializers send is
+// present, so a page reading a wrong key sees `undefined` loudly in tests.
+// ---------------------------------------------------------------------------
+
+/** One undecided expense item, exactly as `SmsImportItemSerializer` sends it. */
+export const SMS_ITEM_PENDING = {
+  id: 101,
+  raw_text: 'بانک ملت: خرید کارت ... مبلغ ۲۵۰,۰۰۰ ریال ... موجودی ۱۲,۰۰۰,۰۰۰ ریال',
+  sender: '+989100000000',
+  bank: 'mellat',
+  bank_label: 'بانک ملت',
+  is_transaction: true,
+  noise_kind: '',
+  card_last4: '1234',
+  merchant: 'فروشگاه',
+  direction: 'expense' as const,
+  direction_label: 'هزینه',
+  direction_pattern: 'card_purchase',
+  amount: '25000.00',
+  amount_display: '۲۵٬۰۰۰ تومان',
+  amount_unit: 'toman',
+  amount_unit_assumed: false,
+  balance_after: '1200000.00',
+  balance_display: '۱٬۲۰۰٬۰۰۰ تومان',
+  balance_label: 'موجودی',
+  occurred_on: '2026-08-20',
+  date_display: '۲۹ مرداد ۱۴۰۵',
+  date_assumed: false,
+  date_source: 'message',
+  confidence: 0.92,
+  confidence_percent_display: '۹۲٪',
+  confidence_label: 'اطمینان بالا',
+  field_confidence: {},
+  warnings: [],
+  category: null,
+  category_detail: null,
+  account: null,
+  account_name: null,
+  spending_type: '',
+  description: 'خرید کارت',
+  note: '',
+  status: 'pending' as const,
+  status_label: 'در انتظار بررسی',
+  transaction: null,
+  is_ready: false,
+}
+
+/** A non-transaction message staged for transparency, never committed. */
+export const SMS_ITEM_NOISE = {
+  ...SMS_ITEM_PENDING,
+  id: 102,
+  raw_text: 'بانک ملت: رمز پویا برای خرید ...',
+  is_transaction: false,
+  noise_kind: 'otp',
+  direction: '' as const,
+  direction_label: 'نامشخص',
+  amount: null,
+  amount_display: null,
+  balance_after: null,
+  balance_display: null,
+  status: 'noise' as const,
+  status_label: 'غیرتراکنشی',
+  is_ready: false,
+}
+
+export const SMS_BATCH = {
+  id: 1,
+  period_year: 1405,
+  period_month: 5,
+  period_label: 'مرداد ۱۴۰۵',
+  source_label: 'بانک ملت',
+  account: 5,
+  account_name: 'بانک ملت',
+  status: 'reviewing' as const,
+  status_label: 'در بررسی',
+  note: '',
+  counts: { total: 2, pending: 1, imported: 0, skipped: 0, duplicate: 0, noise: 1 },
+  created_at: '2026-09-01T00:00:00Z',
+  updated_at: '2026-09-01T00:00:00Z',
+  committed_at: null,
+}
+
+export const SMS_BATCH_DETAIL = {
+  ...SMS_BATCH,
+  items: [SMS_ITEM_PENDING, SMS_ITEM_NOISE],
+}
+
+export const SMS_BATCHES_PAGE = {
+  count: 1,
+  page: 1,
+  page_size: 50,
+  total_pages: 1,
+  next: null,
+  previous: null,
+  results: [SMS_BATCH],
+}
+
+export const SMS_REMINDER = {
+  should_remind: true,
+  dismissed: false,
+  within_window: true,
+  window_days: 10,
+  current_year: 1405,
+  current_month: 6,
+  current_label: 'شهریور ۱۴۰۵',
+  days_elapsed: 3,
+  suggested_year: 1405,
+  suggested_month: 5,
+  suggested_label: 'مرداد ۱۴۰۵',
+  has_batch: false,
+  has_committed_batch: false,
+  pending_count: 0,
+  message: 'ماه مرداد ۱۴۰۵ تمام شد؛ پیامک‌های بانکی آن را وارد کنید تا تراکنش‌ها و موجودی‌ها ثبت شود.',
+}
+
+/** Drift on purpose, so the reconcile button is reachable in tests. */
+export const SMS_RECONCILIATION = {
+  available: true,
+  message: 'موجودی اعلام‌شده با دفتر شما اختلاف دارد؛ می‌توانید موجودی اولیه حساب را هماهنگ کنید.',
+  account_id: 5,
+  account_name: 'بانک ملت',
+  reading_amount: '1200000.00',
+  reading_amount_display: '۱٬۲۰۰٬۰۰۰ تومان',
+  reading_date: '2026-08-20',
+  reading_label: 'موجودی',
+  later_income: '0.00',
+  later_expense: '0.00',
+  implied_opening_balance: '1200000.00',
+  implied_opening_balance_display: '۱٬۲۰۰٬۰۰۰ تومان',
+  current_opening_balance: '0.00',
+  current_opening_balance_display: '۰ تومان',
+  drift: '1200000.00',
+  drift_display: '۱٬۲۰۰٬۰۰۰ تومان',
+  matches: false,
+}
+
+// ---------------------------------------------------------------------------
 // Server stub
 // ---------------------------------------------------------------------------
 
@@ -980,6 +1121,21 @@ export function installServerStub(options: ServerStubOptions = {}): ServerStub {
       }
       if (url.includes('/insights')) {
         return reply(INSIGHTS, 200)
+      }
+      // Bank-SMS import. Order matters: the reminder first, then the
+      // reconcile detail action (its URL still contains `/sms/batches/{id}`),
+      // then the batch detail, then the paginated list.
+      if (url.includes('/sms/reminder')) {
+        return reply(SMS_REMINDER, 200)
+      }
+      if (/\/sms\/batches\/\d+\/reconcile\/$/.test(url)) {
+        return reply(SMS_RECONCILIATION, 200)
+      }
+      if (/\/sms\/batches\/\d+\/$/.test(url)) {
+        return reply(SMS_BATCH_DETAIL, 200)
+      }
+      if (url.includes('/sms/batches')) {
+        return reply(SMS_BATCHES_PAGE, 200)
       }
       if (url.includes('/auth/me')) {
         return reply(

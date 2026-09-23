@@ -30,6 +30,17 @@ import type {
   NetWorthPoint,
   Paginated,
   ReportsPayload,
+  SmsBulkPayload,
+  SmsBulkUpdateResponse,
+  SmsCommitResponse,
+  SmsImportBatch,
+  SmsImportBatchSummary,
+  SmsImportItem,
+  SmsItemPatch,
+  SmsParsePayload,
+  SmsParsePreview,
+  SmsReconciliation,
+  SmsReminderState,
   Tag,
   Transaction,
   TransactionFilters,
@@ -534,6 +545,96 @@ export const insightsApi = {
   async list(params: { year?: number; month?: number } = {}): Promise<InsightsResponse> {
     const { data } = await http.get<InsightsResponse>('/insights/', {
       params: cleanParams(params),
+    })
+    return data
+  },
+}
+
+// ---------------------------------------------------------------------------
+// Bank-SMS import
+// ---------------------------------------------------------------------------
+
+export const smsApi = {
+  /** Read a pasted blob and report what was found — nothing is stored. */
+  async parsePreview(payload: SmsParsePayload): Promise<SmsParsePreview> {
+    const { data } = await http.post<SmsParsePreview>(
+      '/sms/parse/',
+      cleanParams(payload as Record<string, unknown>),
+    )
+    return data
+  },
+
+  /** Stage a batch from the pasted text; rows land in the review tables only. */
+  async createBatch(payload: SmsParsePayload): Promise<SmsImportBatch> {
+    const { data } = await http.post<SmsImportBatch>(
+      '/sms/batches/',
+      cleanParams(payload as Record<string, unknown>),
+    )
+    return data
+  },
+
+  async batches(): Promise<Paginated<SmsImportBatchSummary>> {
+    const { data } = await http.get<Paginated<SmsImportBatchSummary>>('/sms/batches/', {
+      params: { page_size: 50 },
+    })
+    return data
+  },
+
+  async batch(id: number): Promise<SmsImportBatch> {
+    const { data } = await http.get<SmsImportBatch>(`/sms/batches/${id}/`)
+    return data
+  },
+
+  /** Rename a batch or re-point it at an account (needed before reconciling). */
+  async updateBatch(id: number, payload: { note?: string; account?: number | null }): Promise<SmsImportBatch> {
+    const { data } = await http.patch<SmsImportBatch>(`/sms/batches/${id}/`, payload)
+    return data
+  },
+
+  /** Discard a batch and everything staged under it. */
+  async removeBatch(id: number): Promise<void> {
+    await http.delete(`/sms/batches/${id}/`)
+  },
+
+  /** Write the confirmed rows into the ledger. */
+  async commit(id: number, itemIds?: number[]): Promise<SmsCommitResponse> {
+    const { data } = await http.post<SmsCommitResponse>(`/sms/batches/${id}/commit/`, {
+      item_ids: itemIds,
+    })
+    return data
+  },
+
+  async reconcile(id: number): Promise<SmsReconciliation> {
+    const { data } = await http.get<SmsReconciliation>(`/sms/batches/${id}/reconcile/`)
+    return data
+  },
+
+  async applyReconcile(id: number): Promise<SmsReconciliation> {
+    const { data } = await http.post<SmsReconciliation>(`/sms/batches/${id}/reconcile/apply/`, {})
+    return data
+  },
+
+  /** Classify one staged item; answers with the full review representation. */
+  async updateItem(id: number, payload: SmsItemPatch): Promise<SmsImportItem> {
+    const { data } = await http.patch<SmsImportItem>(`/sms/items/${id}/`, payload)
+    return data
+  },
+
+  /** Apply one decision to a selection of staged items. */
+  async bulkUpdate(payload: SmsBulkPayload): Promise<SmsBulkUpdateResponse> {
+    const { data } = await http.post<SmsBulkUpdateResponse>('/sms/items/bulk/', payload)
+    return data
+  },
+
+  async reminder(): Promise<SmsReminderState> {
+    const { data } = await http.get<SmsReminderState>('/sms/reminder/')
+    return data
+  },
+
+  async dismissReminder(year: number, month: number): Promise<SmsReminderState> {
+    const { data } = await http.post<SmsReminderState>('/sms/reminder/', {
+      period_year: year,
+      period_month: month,
     })
     return data
   },

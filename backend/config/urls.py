@@ -44,6 +44,7 @@ api_patterns = [
     path("", include("apps.assets.urls")),
     path("", include("apps.reports.urls")),
     path("", include("apps.insights.urls")),
+    path("", include("apps.sms.urls")),
 ]
 
 urlpatterns = [

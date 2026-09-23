@@ -817,3 +817,230 @@ export interface TransactionFilters {
   page?: number
   page_size?: number
 }
+
+// ---------------------------------------------------------------------------
+// Bank-SMS import
+//
+// Staging flow: paste → `POST /sms/parse/` (nothing saved) → `POST /sms/batches/`
+// (rows staged for review) → classify each item → `POST /batches/{id}/commit/`
+// (the ledger write). The review screen works on `SmsImportItem`s; only
+// `commit` creates `Transaction`s.
+// ---------------------------------------------------------------------------
+
+export type SmsItemDirection = 'income' | 'expense' | ''
+
+export type SmsItemStatus = 'pending' | 'imported' | 'skipped' | 'duplicate' | 'noise'
+
+export type SmsBatchStatus = 'reviewing' | 'committed'
+
+/**
+ * One parsed message, exactly what `POST /sms/parse/` returns per message and
+ * what a staged item was built from. Money arrives as decimal strings in
+ * toman, like everywhere else in the API.
+ */
+export interface SmsPreviewMessage {
+  raw_text: string
+  bank: string
+  bank_label: string
+  sender: string
+  is_transaction: boolean
+  noise_kind: string
+  direction: SmsItemDirection
+  direction_pattern: string
+  amount: string | null
+  amount_unit: string
+  amount_unit_assumed: boolean
+  balance_after: string | null
+  balance_label: string
+  occurred_on: string | null
+  date_source: string
+  card_last4: string
+  merchant: string
+  description: string
+  /** Decimal string, e.g. "0.92" — the label variants are what the UI shows. */
+  confidence: string
+  field_confidence: Record<string, string>
+  warnings: string[]
+  fingerprint: string
+}
+
+export interface SmsParsePreview {
+  period: { year: number; month: number; label: string }
+  summary: {
+    total: number
+    readable: number
+    without_balance: number
+    not_transaction: number
+    low_confidence: number
+  }
+  messages: SmsPreviewMessage[]
+}
+
+export interface SmsBatchCounts {
+  total: number
+  pending: number
+  imported: number
+  skipped: number
+  duplicate: number
+  noise: number
+}
+
+/** A batch without its items — the history list entry. */
+export interface SmsImportBatchSummary {
+  id: number
+  period_year: number
+  period_month: number
+  period_label: string
+  source_label: string
+  account: number | null
+  account_name: string | null
+  status: SmsBatchStatus
+  status_label: string
+  note: string
+  counts: SmsBatchCounts
+  created_at: string
+  updated_at: string
+  committed_at: string | null
+}
+
+/** A batch with every staged item — what the review screen loads. */
+export interface SmsImportBatch extends SmsImportBatchSummary {
+  items: SmsImportItem[]
+}
+
+export interface SmsImportItem {
+  id: number
+  // --- what arrived ------------------------------------------------------
+  raw_text: string
+  sender: string
+  bank: string
+  bank_label: string
+  is_transaction: boolean
+  noise_kind: string
+  card_last4: string
+  merchant: string
+  // --- what was parsed ---------------------------------------------------
+  direction: SmsItemDirection
+  direction_label: string
+  direction_pattern: string
+  amount: string | null
+  amount_display: string | null
+  amount_unit: string
+  amount_unit_assumed: boolean
+  balance_after: string | null
+  balance_display: string | null
+  balance_label: string
+  occurred_on: string | null
+  date_display: string | null
+  /** True when the date was not read from the message. */
+  date_assumed: boolean
+  date_source: string
+  confidence: number
+  confidence_percent_display: string
+  confidence_label: string
+  field_confidence: Record<string, string>
+  warnings: string[]
+  // --- what the user decided ----------------------------------------------
+  category: number | null
+  category_detail: CategoryPickerItem | null
+  account: number | null
+  account_name: string | null
+  /** Empty on income rows — they carry no classification. */
+  spending_type: SpendingType | ''
+  description: string
+  note: string
+  status: SmsItemStatus
+  status_label: string
+  transaction: number | null
+  is_ready: boolean
+}
+
+/** What `POST /sms/batches/{id}/commit/` answers with. */
+export interface SmsCommitResponse {
+  batch: SmsImportBatch
+  imported_count: number
+  missing_category_count: number
+  incomplete_count: number
+  not_transaction_count: number
+  transactions: Transaction[]
+  message: string
+}
+
+/**
+ * What the balances printed in a batch imply about the account's opening
+ * balance. `available: false` answers carry only a `message` explaining why.
+ */
+export interface SmsReconciliation {
+  available: boolean
+  message: string
+  account_id?: number
+  account_name?: string
+  reading_amount?: string
+  reading_amount_display?: string
+  reading_date?: string | null
+  reading_label?: string
+  later_income?: string
+  later_expense?: string
+  implied_opening_balance?: string
+  implied_opening_balance_display?: string
+  current_opening_balance?: string
+  current_opening_balance_display?: string
+  drift?: string
+  drift_display?: string
+  matches?: boolean
+  applied?: boolean
+}
+
+export interface SmsReminderState {
+  should_remind: boolean
+  dismissed: boolean
+  within_window: boolean
+  window_days: number
+  current_year: number
+  current_month: number
+  current_label: string
+  days_elapsed: number
+  suggested_year: number
+  suggested_month: number
+  suggested_label: string
+  has_batch: boolean
+  has_committed_batch: boolean
+  pending_count: number
+  message: string
+}
+
+/** Payload for reading messages: a pasted blob, or explicit messages. */
+export interface SmsParsePayload {
+  text?: string
+  source_label?: string
+  period_year?: number
+  period_month?: number
+  account?: number | null
+}
+
+/** One staged item's editable decisions. */
+export interface SmsItemPatch {
+  category?: number | null
+  account?: number | null
+  spending_type?: SpendingType | ''
+  status?: 'pending' | 'skipped'
+  description?: string
+  note?: string
+  direction?: SmsItemDirection
+  occurred_on?: string | null
+}
+
+/** Apply one decision to a whole selection of staged items. */
+export interface SmsBulkPayload {
+  item_ids: number[]
+  category?: number | null
+  account?: number | null
+  spending_type?: SpendingType
+  status?: 'pending' | 'skipped'
+}
+
+export interface SmsBulkUpdateResponse {
+  updated_count: number
+  skipped_count: number
+  items: SmsImportItem[]
+}

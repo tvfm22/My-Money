@@ -27,6 +27,7 @@ import {
   insightsApi,
   netWorthApi,
   reportsApi,
+  smsApi,
   transactionsApi,
 } from '../services/api'
 import type {
@@ -43,6 +44,9 @@ import type {
   NetWorthPoint,
   Paginated,
   ReportsPayload,
+  SmsBulkPayload,
+  SmsItemPatch,
+  SmsParsePayload,
   Transaction,
   TransactionFilters,
   TransactionSummary,
@@ -91,6 +95,11 @@ export const queryKeys = {
 
   reports: (params?: Record<string, unknown>) => ['reports', params ?? {}] as const,
   insights: (year?: number, month?: number) => ['insights', year, month] as const,
+
+  smsBatches: ['sms', 'batches'] as const,
+  smsBatch: (id: number) => ['sms', 'batch', id] as const,
+  smsReminder: ['sms', 'reminder'] as const,
+  smsReconcile: (id: number) => ['sms', 'reconcile', id] as const,
 }
 
 // ---------------------------------------------------------------------------
@@ -661,6 +670,147 @@ export function useInsights(year?: number, month?: number) {
   return useQuery({
     queryKey: queryKeys.insights(year, month),
     queryFn: () => insightsApi.list({ year, month }),
+  })
+}
+
+// ---------------------------------------------------------------------------
+// Bank-SMS import
+// ---------------------------------------------------------------------------
+
+export function useSmsBatches() {
+  return useQuery({
+    queryKey: queryKeys.smsBatches,
+    queryFn: smsApi.batches,
+  })
+}
+
+export function useSmsBatch(id: number) {
+  return useQuery({
+    queryKey: queryKeys.smsBatch(id),
+    queryFn: () => smsApi.batch(id),
+  })
+}
+
+export function useSmsReminder() {
+  return useQuery({
+    queryKey: queryKeys.smsReminder,
+    queryFn: smsApi.reminder,
+  })
+}
+
+/** Reconciliation is only meaningful once the batch points at an account. */
+export function useSmsReconcile(id: number) {
+  return useQuery({
+    queryKey: queryKeys.smsReconcile(id),
+    queryFn: () => smsApi.reconcile(id),
+  })
+}
+
+/** Read the pasted text and report what was found, storing nothing. */
+export function useSmsParsePreview() {
+  return useMutation({
+    mutationFn: (payload: SmsParsePayload) => smsApi.parsePreview(payload),
+  })
+}
+
+export function useCreateSmsBatch() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (payload: SmsParsePayload) => smsApi.createBatch(payload),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.smsBatches })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.smsReminder })
+    },
+  })
+}
+
+function invalidateSmsBatch(queryClient: ReturnType<typeof useQueryClient>, batchId: number): void {
+  void queryClient.invalidateQueries({ queryKey: queryKeys.smsBatch(batchId) })
+  void queryClient.invalidateQueries({ queryKey: queryKeys.smsBatches })
+  void queryClient.invalidateQueries({ queryKey: queryKeys.smsReconcile(batchId) })
+}
+
+export function useUpdateSmsItem(batchId: number) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, ...payload }: { id: number } & SmsItemPatch) =>
+      smsApi.updateItem(id, payload),
+    onSuccess: () => {
+      invalidateSmsBatch(queryClient, batchId)
+      void queryClient.invalidateQueries({ queryKey: queryKeys.smsReminder })
+    },
+  })
+}
+
+export function useBulkUpdateSmsItems(batchId: number) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (payload: SmsBulkPayload) => smsApi.bulkUpdate(payload),
+    onSuccess: () => {
+      invalidateSmsBatch(queryClient, batchId)
+      void queryClient.invalidateQueries({ queryKey: queryKeys.smsReminder })
+    },
+  })
+}
+
+/**
+ * Committing is the one SMS action that writes to the ledger, so the whole
+ * financial state — balances, budgets, reports — goes stale with it.
+ */
+export function useCommitSmsBatch(batchId: number) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (itemIds?: number[]) => smsApi.commit(batchId, itemIds),
+    onSuccess: () => {
+      invalidateFinancialState(queryClient)
+      invalidateSmsBatch(queryClient, batchId)
+      void queryClient.invalidateQueries({ queryKey: queryKeys.smsReminder })
+    },
+  })
+}
+
+export function useDeleteSmsBatch() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: number) => smsApi.removeBatch(id),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.smsBatches })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.smsReminder })
+    },
+  })
+}
+
+export function useUpdateSmsBatch(batchId: number) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (payload: { note?: string; account?: number | null }) =>
+      smsApi.updateBatch(batchId, payload),
+    onSuccess: () => invalidateSmsBatch(queryClient, batchId),
+  })
+}
+
+/** Applying reconciliation rewrites an account's opening balance. */
+export function useApplySmsReconcile(batchId: number) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => smsApi.applyReconcile(batchId),
+    onSuccess: () => {
+      invalidateSmsBatch(queryClient, batchId)
+      void queryClient.invalidateQueries({ queryKey: ['accounts'] })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.netWorth })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.dashboard })
+    },
+  })
+}
+
+export function useDismissSmsReminder() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ year, month }: { year: number; month: number }) =>
+      smsApi.dismissReminder(year, month),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.smsReminder })
+    },
   })
 }
 
