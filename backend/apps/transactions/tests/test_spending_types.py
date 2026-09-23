@@ -148,14 +148,14 @@ class SpendingTypeModelTests(TestCase):
         )
         self.assertEqual(
             self._expense(spending_type=SpendingType.WASTED).spending_type_label,
-            "هدر رفته",
+            "غیرضروری",
         )
         self.assertEqual(self._income().spending_type_label, "")
 
     def test_all_three_choices_exist_with_persian_labels(self):
         self.assertEqual(
             [label for _value, label in SpendingType.choices],
-            ["ضروری", "انعطاف‌پذیر", "هدر رفته"],
+            ["ضروری", "انعطاف‌پذیر", "غیرضروری"],
         )
 
 
@@ -217,7 +217,7 @@ class SpendingTypeBreakdownTests(TestCase):
     def test_always_returns_all_three_buckets_in_fixed_order(self):
         """A stable shape, even when a bucket is empty.
 
-        An explicit «هدر رفته: ۰ تومان» is information — it says the user looked
+        An explicit «غیرضروری: ۰ تومان» is information — it says the user looked
         and found none. A missing bucket says nothing at all.
         """
         self._expense("100000", SpendingType.ESSENTIAL)

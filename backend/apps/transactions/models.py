@@ -48,7 +48,7 @@ class SpendingType(models.TextChoices):
 
     ESSENTIAL = "essential", "ضروری"
     FLEXIBLE = "flexible", "انعطاف‌پذیر"
-    WASTED = "wasted", "هدر رفته"
+    WASTED = "wasted", "غیرضروری"
 
 
 class Tag(models.Model):
@@ -122,7 +122,7 @@ class Transaction(models.Model):
         db_index=True,
     )
 
-    # How the user classified this expense: ضروری / انعطاف‌پذیر / هدر رفته.
+    # How the user classified this expense: ضروری / انعطاف‌پذیر / غیرضروری.
     # Blank on income, which has no such notion. `save()` enforces both sides of
     # that rule so every write path agrees.
     spending_type = models.CharField(

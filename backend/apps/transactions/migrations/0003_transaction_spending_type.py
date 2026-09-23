@@ -1,4 +1,4 @@
-"""Classify every expense as ضروری / انعطاف‌پذیر / هدر رفته.
+"""Classify every expense as ضروری / انعطاف‌پذیر / غیرضروری.
 
 The field is new, so existing rows have nothing to classify them. Rather than
 leave every past expense unclassified — which would make the reports read as if
@@ -64,7 +64,7 @@ class Migration(migrations.Migration):
                 choices=[
                     ("essential", "ضروری"),
                     ("flexible", "انعطاف‌پذیر"),
-                    ("wasted", "هدر رفته"),
+                    ("wasted", "غیرضروری"),
                 ],
                 default="",
                 max_length=10,

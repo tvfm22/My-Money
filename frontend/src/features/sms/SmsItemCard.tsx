@@ -37,7 +37,7 @@ const CONFIDENCE_VARIANT: Record<string, 'positive' | 'caution' | 'critical'> = 
 const SPENDING_TYPE_OPTIONS = [
   { value: 'essential', label: 'ضروری' },
   { value: 'flexible', label: 'انعطاف‌پذیر' },
-  { value: 'wasted', label: 'هدر رفته' },
+  { value: 'wasted', label: 'غیرضروری' },
 ]
 
 export interface SmsItemCardProps {

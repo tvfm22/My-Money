@@ -43,7 +43,7 @@ src/
 ### Spending classification
 
 Every expense carries one of three user-chosen types: `essential` (ضروری),
-`flexible` (انعطاف‌پذیر), `wasted` (هدر رفته). Income never carries one — the
+`flexible` (انعطاف‌پذیر), `wasted` (غیرضروری). Income never carries one — the
 server rejects the field. The picker is shared (`components/common/
 SpendingTypeSelector.tsx`) so the quick sheet and the full form always offer
 the same three options. The month-level split renders through

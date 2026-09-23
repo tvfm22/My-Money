@@ -315,11 +315,15 @@ class ResolveMonthParamTests(SimpleTestCase):
             {"year": "1200", "month": "6"},
             {"year": "1405", "month_number": "0"},
         ]:
-            with self.subTest(**junk):
-                self.assertEqual(
-                    resolve_month_param(_FakeRequest(**junk)), (1405, 6),
-                    f"{junk} should fall back to the default month",
-                )
+            # The default is *the current month* — pin it so this assertion
+            # does not depend on the day the suite happens to run (it broke the
+            # day the Jalali month rolled over, when شهریور -> مهر).
+            with patch("apps.core.jalali.current_jalali_month", return_value=(1405, 6)):
+                with self.subTest(**junk):
+                    self.assertEqual(
+                        resolve_month_param(_FakeRequest(**junk)), (1405, 6),
+                        f"{junk} should fall back to the default month",
+                    )
 
     def test_honours_an_explicit_default(self):
         self.assertEqual(

@@ -19,7 +19,7 @@ from apps.core.money import ZERO, percentage, quantize_money, sum_money
 from .models import SpendingType, Transaction, TransactionType
 
 # Fixed order, always all three, even at zero. A stable shape means the UI does
-# not have to guess which buckets exist, and an explicit «هدر رفته: ۰ تومان» is
+# not have to guess which buckets exist, and an explicit «غیرضروری: ۰ تومان» is
 # information — it says the user looked and found none.
 SPENDING_TYPE_ORDER: tuple[str, ...] = (
     SpendingType.ESSENTIAL,

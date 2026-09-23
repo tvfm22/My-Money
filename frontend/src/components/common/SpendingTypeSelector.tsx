@@ -17,7 +17,7 @@ export const SPENDING_TYPE_OPTIONS: Array<{
   },
   {
     key: 'wasted',
-    label: 'هدر رفته',
+    label: 'غیرضروری',
     activeClass: 'border-caution-500 bg-caution-50 text-caution-700',
   },
 ]

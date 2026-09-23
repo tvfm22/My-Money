@@ -353,7 +353,7 @@ class SmsBulkUpdateRequestSerializer(serializers.Serializer):
         queryset=Account.objects.all(), required=False, allow_null=True
     )
     spending_type = serializers.ChoiceField(
-        choices=[("essential", "ضروری"), ("flexible", "انعطاف‌پذیر"), ("wasted", "هدر رفته")],
+        choices=[("essential", "ضروری"), ("flexible", "انعطاف‌پذیر"), ("wasted", "غیرضروری")],
         required=False,
     )
     status = serializers.ChoiceField(choices=CLIENT_SETTABLE_STATUSES, required=False)

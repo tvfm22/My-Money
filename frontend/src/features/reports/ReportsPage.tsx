@@ -236,7 +236,7 @@ export function ReportsPage() {
             <Card>
               <CardHeader
                 title="نوع هزینه‌ها"
-                subtitle="سهم هزینه‌های ضروری، انعطاف‌پذیر و هدر رفته"
+                subtitle="سهم هزینه‌های ضروری، انعطاف‌پذیر و غیرضروری"
                 action={
                   <span className="text-[12px] text-ink-soft">
                     جمع{' '}
@@ -320,7 +320,7 @@ export function ReportsPage() {
                   const actual = Number(row.actual)
                   const percent = budgeted > 0 ? (actual / budgeted) * 100 : 0
                   // Only slices that actually carry money — a category with no
-                  // wasted spend should not grow a "هدر رفته ۰٪" line.
+                  // wasted spend should not grow a "غیرضروری ۰٪" line.
                   const typeSplit =
                     row.spending_types?.buckets.filter((b) => Number(b.amount) > 0) ?? []
 

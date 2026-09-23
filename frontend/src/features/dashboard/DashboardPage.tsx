@@ -190,7 +190,7 @@ export function DashboardPage() {
           <Card>
             <CardHeader
               title="ترکیب هزینه‌ها"
-              subtitle="چقدر از هزینه‌های این ماه ضروری، انعطاف‌پذیر یا هدر رفته بوده است"
+              subtitle="چقدر از هزینه‌های این ماه ضروری، انعطاف‌پذیر یا غیرضروری بوده است"
             />
             <SpendingTypeSplit spendingTypes={data.spending_types} className="mt-4" />
           </Card>
